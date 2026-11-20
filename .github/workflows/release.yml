@@ -1,0 +1,164 @@
+# Каждый push: тесты → бинарники vladx для Linux/macOS/Windows + WASM и площадка →
+# релиз «nightly» на GitHub (перезаписывается). Тег v* → постоянный релиз.
+name: release
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  VLADX_COMMIT: ${{ github.sha }}
+
+jobs:
+  test:
+    name: тесты
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: pip install jsonschema
+      - name: cargo test + test-all.sh
+        run: bash scripts/test-all.sh
+
+  browser:
+    name: браузер (Chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: bash scripts/build-site.sh
+      - run: npm i --no-save playwright && npx playwright install --with-deps chromium
+      - name: сценарий files-net
+        # api.github.com бывает ограничен по частоте; JSON с CORS берём у jsonplaceholder
+        env:
+          VLADX_NET_URL: https://jsonplaceholder.typicode.com/todos/1
+          VLADX_NET_FIELD: id
+        run: node tests/browser/files-net.mjs
+
+  build:
+    name: сборка ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  target: x86_64-unknown-linux-musl, archive: tar.gz }
+          - { os: macos-latest,   target: aarch64-apple-darwin,      archive: tar.gz }
+          - { os: macos-latest,   target: x86_64-apple-darwin,       archive: tar.gz }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc,    archive: zip }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: cargo build
+        run: cargo build --release --locked -p vladx-cli --target ${{ matrix.target }}
+      - name: упаковка
+        shell: bash
+        run: |
+          name="vladx-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          exe=vladx; [[ "${{ matrix.target }}" == *windows* ]] && exe=vladx.exe
+          cp "target/${{ matrix.target }}/release/$exe" "dist/$name/"
+          cp README.md LICENSE "dist/$name/"
+          cp -r examples "dist/$name/"
+          cd dist
+          if [ "${{ matrix.archive }}" = zip ]; then 7z a -bd "$name.zip" "$name" >/dev/null; else tar czf "$name.tar.gz" "$name"; fi
+          rm -rf "$name"
+      - name: проверка бинарника
+        if: matrix.target != 'x86_64-apple-darwin'
+        shell: bash
+        run: |
+          exe=vladx; [[ "${{ matrix.target }}" == *windows* ]] && exe=vladx.exe
+          "target/${{ matrix.target }}/release/$exe" --version
+          "target/${{ matrix.target }}/release/$exe" run examples/ru/10-fizzbuzz.vlstd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vladx-${{ matrix.target }}
+          path: dist/*
+
+  web:
+    name: сборка WASM и площадки
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: bash scripts/build-site.sh
+      - run: |
+          mkdir -p dist
+          cp site/playground.html dist/vladx-playground.html
+          cp "$(cargo metadata --format-version 1 --no-deps | python3 -c 'import sys,json;print(json.load(sys.stdin)["target_directory"])')/wasm32-unknown-unknown/release/vladx_wasm.wasm" dist/vladx.wasm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vladx-web
+          path: dist/*
+
+  release:
+    name: релиз на GitHub
+    needs: [test, build, web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: контрольные суммы
+        run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - name: публикация
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          short="${GITHUB_SHA::7}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF_NAME}"
+            gh release delete "$tag" -y 2>/dev/null || true
+            gh release create "$tag" dist/* --title "VladX $tag" \
+              --notes "Сборка $tag (коммит $short). Распакуйте архив для своей системы и запустите \`vladx run examples/ru/01-hello.vlstd\`."
+          else
+            tag=nightly
+            gh release delete "$tag" -y --cleanup-tag 2>/dev/null || true
+            git push origin ":refs/tags/$tag" 2>/dev/null || true
+            gh release create "$tag" dist/* --prerelease --target "$GITHUB_SHA" \
+              --title "VladX nightly ($short)" \
+              --notes "Свежая сборка: ветка \`${GITHUB_REF_NAME}\`, коммит $short, $(date -u '+%Y-%m-%d %H:%M UTC').
+
+          | Система | Файл |
+          |---|---|
+          | Linux x86_64 (статический) | \`vladx-x86_64-unknown-linux-musl.tar.gz\` |
+          | macOS Apple Silicon | \`vladx-aarch64-apple-darwin.tar.gz\` |
+          | macOS Intel | \`vladx-x86_64-apple-darwin.tar.gz\` |
+          | Windows x86_64 | \`vladx-x86_64-pc-windows-msvc.zip\` |
+          | Площадка (открыть через \`vladx serve\`) | \`vladx-playground.html\` |
+          | Ядро WebAssembly | \`vladx.wasm\` |
+
+          Релиз перезаписывается при каждом push."
+          fi

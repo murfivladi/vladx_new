@@ -122,8 +122,9 @@ fn main() -> ExitCode {
             println!("{USAGE}");
             Ok(true)
         }
-        "--version" | "version" => {
-            println!("vladx 0.1.0 (схема AST {})", vladx_ast::SCHEMA_VERSION);
+        "--version" | "-V" | "version" => {
+            let commit = option_env!("VLADX_COMMIT").unwrap_or("локальная сборка");
+            println!("vladx {} ({commit}, схема AST {})", env!("CARGO_PKG_VERSION"), vladx_ast::SCHEMA_VERSION);
             Ok(true)
         }
         other => Err(format!("неизвестная команда «{other}»\n\n{USAGE}")),

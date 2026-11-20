@@ -20,7 +20,22 @@ sia nome = "mondo"
 dì "ciao, {nome}"
 ```
 
-## Быстрый старт
+## Скачать
+
+Готовый `vladx` собирается на GitHub при каждом push и лежит в релизе **nightly**:
+<https://github.com/murfivladi/vladx_new/releases/tag/nightly>
+
+| Система | Файл |
+|---|---|
+| Linux x86_64 (статический) | `vladx-x86_64-unknown-linux-musl.tar.gz` |
+| macOS Apple Silicon | `vladx-aarch64-apple-darwin.tar.gz` |
+| macOS Intel | `vladx-x86_64-apple-darwin.tar.gz` |
+| Windows x86_64 | `vladx-x86_64-pc-windows-msvc.zip` |
+| Площадка и ядро WASM | `vladx-playground.html`, `vladx.wasm` |
+
+Распакуйте архив и запустите `vladx run examples/ru/01-hello.vlstd`. На macOS при первом запуске может понадобиться `xattr -d com.apple.quarantine vladx`. Тег `v*` (например, `v0.1.0`) создаёт постоянный релиз с тем же набором файлов. Сборкой управляет `.github/workflows/release.yml`.
+
+## Сборка из исходников
 
 ```bash
 cargo build --release
