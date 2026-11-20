@@ -48,10 +48,15 @@ async function ready() {
   await page.waitForFunction(() => !document.getElementById('run').disabled, null, { timeout: 30000 });
   await page.waitForFunction(() => /готово|ошибка/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
 }
+async function idle() {
+  await page.waitForFunction(() => !/выполняется|переводит/.test(document.getElementById('status').textContent), null, { timeout: 60000 });
+}
 async function run(code) {
+  await idle();
   await page.fill('#code', code);
   await page.click('#run');
-  await page.waitForFunction(() => !/выполняется/.test(document.getElementById('status').textContent), null, { timeout: 60000 });
+  await page.waitForTimeout(50);
+  await idle();
   return page.innerText('#output');
 }
 async function filesPanel() { return page.$$eval('#files li:not(.empty) span', els => els.map(e => e.textContent)); }
@@ -113,7 +118,22 @@ out = await run(`пусть т будет rete.получи("${NET_URL}")\nск�
 check(9, 'тот же запрос через прокси http://localhost:8000 → строка', out.startsWith('истина') && out.includes('{'), out);
 await page.uncheck('#viaproxy');
 
-check(10, 'в консоли страницы нет ошибок', consoleErrors.length === 0, consoleErrors.join('\n'));
+// 10. перевод кода на другой язык прямо в браузере (ядро, без сервера)
+await page.fill('#code', 'пусть x будет 2\nскажи x * 3');
+await page.selectOption('#tolang', '1');
+await page.waitForFunction(() => /переведено/.test(document.getElementById('status').textContent));
+const itCode = await page.inputValue('#code');
+check(10, 'перевод ru → it в браузере', itCode.includes('sia x = 2') && itCode.includes('dì x * 3') && (await page.inputValue('#lang')) === '1', itCode);
+await page.selectOption('#lang', '0');
+await idle();
+
+// 11. .vlhmn: блоки кода разбираются без ИИ, перевод — через /hmn у vladx serve
+await page.selectOption('#fmt', 'vlhmn');
+out = await run('```\nскажи "из блока кода"\n```');
+check(11, '.vlhmn из одного блока кода (через /hmn, без ИИ)', out.includes('из блока кода') && out.includes('ИИ понял так'), out);
+await page.selectOption('#fmt', 'vlstd');
+
+check(12, 'в консоли страницы нет ошибок', consoleErrors.length === 0, consoleErrors.join('\n'));
 
 await browser.close();
 if (server) server.kill();

@@ -20,6 +20,13 @@ sia nome = "mondo"
 dì "ciao, {nome}"
 ```
 
+А можно и без кода — файл `.vlhmn` переводит в ту же программу ИИ:
+
+```text
+Сделай список покупок: хлеб, молоко и сыр.
+Потом выведи каждый пункт с тире в начале.
+```
+
 ## Скачать
 
 Готовый `vladx` собирается на GitHub при каждом push и лежит в релизе **nightly**:
@@ -64,8 +71,22 @@ vladx run <файл> [--lang ru|it|scn] [--no-net] [--no-files] [--restrict-file
 vladx parse <файл> [--lang ru|it|scn] [--keywords <путь>]    AST в JSON
 vladx check <файл> [--lang ru|it|scn]                        только диагностика
 vladx keywords [--lang ru|it|scn]                            словарь форм
-vladx serve [--port 8000]                                    площадка и прокси
+vladx fmt <файл> [--to ru|it|scn] [--write]                  канонический вид / перевод на другой язык
+vladx serve [--port 8000]                                    площадка, прокси и ИИ для .vlhmn
+vladx hmn-eval <папка>                                       оценка перевода .vlhmn на наборе фраз
 ```
+
+Для `.vlhmn` нужен ключ Polza.ai:
+
+```bash
+export POLZA_API_KEY=…
+```
+
+```bash
+vladx run examples/ru/14-shopping.vlhmn
+```
+
+Перед запуском `vladx` показывает, как ИИ понял текст, и не запускает программу, если уверенность ниже 0.8. Переводы кэшируются: повторный запуск запросов не тратит. Модель меняется переменной `VLADX_LLM_MODEL` (по умолчанию `anthropic/claude-haiku-5.5`).
 
 По умолчанию открыто всё, как в Node: любые файлы и сеть без флагов. Сузить: `--no-files`, `--no-net`, `--restrict-files` (только папка программы).
 
@@ -92,6 +113,7 @@ crates/
   vladx-ast       нейтральный AST (serde) и диагностика
   vladx-syntax    словарь → лексер → парсер → статические проверки
   vladx-runtime   интерпретатор, stdlib (9 модулей), трейт Host
+  vladx-hmn       .vlhmn: промпт, проверка ответа ИИ, повтор, кэш
   vladx-wasm      C-ABI для браузера (без wasm-bindgen)
   vladx-cli       vladx run/parse/check/keywords/serve
   xtask           проверка словаря: cargo run -p xtask
@@ -109,6 +131,6 @@ docs/HANDOVER.md  исходное техническое задание
 
 ## Чего пока нет
 
-`.vlhmn` (свободный текст → LLM → AST), импорт файлов проекта, форматтер, `vladx.toml`, подсветка синтаксиса. Слова `it` и `scn` ждут проверки носителем. Подробнее — `spec/SPEC.md`, §11.
+Импорт файлов проекта, `vladx.toml`, подсветка синтаксиса. Слова `it` и `scn` ждут проверки носителем. Подробнее — `spec/SPEC.md`, §13.
 
 Лицензия — MIT.

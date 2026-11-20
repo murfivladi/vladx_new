@@ -39,6 +39,27 @@ if python3 -c 'import jsonschema' 2>/dev/null; then
   if msg="$(python3 scripts/validate-ast.py "$VX")"; then ok "$msg"; else bad "$msg"; fi
 else echo "       (пропущено: нет python-пакета jsonschema)"; fi
 
+echo "== форматтер и перевод"
+fmtok=1
+for lang in ru it scn; do for f in examples/$lang/*.vlstd; do
+  [ "$("$VX" fmt "$f" --lang "$lang")" = "$(cat "$f")" ] || { bad "$f не в каноническом виде (vladx fmt)"; fmtok=0; }
+done; done
+[ $fmtok = 1 ] && ok "все примеры в каноническом виде"
+it_out="$("$VX" fmt examples/ru/04-loops.vlstd --to it 2>&1)"
+has "$it_out" "per ogni вещь in покупки" && ok "перевод ru → it" || bad "перевод ru → it: $it_out"
+
+echo "== .vlhmn"
+printf '```\nскажи "только код"\n```\n' > "$TMP/code.vlhmn"
+[ "$("$VX" run "$TMP/code.vlhmn" 2>&1)" = "только код" ] && ok ".vlhmn из одного блока кода работает без ИИ" || bad ".vlhmn только с кодом"
+if [ -n "${POLZA_API_KEY:-}${VLADX_LLM_KEY:-}" ]; then
+  for f in examples/*/*.vlhmn; do
+    lang="$(basename "$(dirname "$f")")"
+    "$VX" check "$f" --lang "$lang" >/dev/null 2>"$TMP/err" && ok "$f (ИИ)" || { bad "$f"; cat "$TMP/err"; }
+  done
+else
+  echo "       (перевод .vlhmn через ИИ пропущен: нет POLZA_API_KEY; конвейер проверен тестами vladx-hmn)"
+fi
+
 echo "== негативные случаи"
 for pair in "01-order:E-ORDER-001" "02-unclosed-block:E-SYNTAX-003" "03-mutate-const:E-NAME-002" "04-unknown-word:E-SYNTAX-016"; do
   f="tests/negative/${pair%%:*}.vlstd"; want="${pair##*:}"

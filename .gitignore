@@ -5,3 +5,5 @@ package-lock.json
 examples/**/заметка.txt
 examples/**/папка/
 *.wasm
+# кэш переводов .vlhmn (ответы ИИ)
+.vladx-cache/

@@ -11,8 +11,9 @@ wasm = pathlib.Path(sys.argv[1]).read_bytes()
 examples = {}
 for lang in ("ru", "it", "scn"):
     items = []
-    for f in sorted(pathlib.Path("examples", lang).glob("*.vlstd")):
-        items.append({"name": f.stem, "code": f.read_text(encoding="utf-8")})
+    files = sorted(list(pathlib.Path("examples", lang).glob("*.vlstd")) + list(pathlib.Path("examples", lang).glob("*.vlhmn")))
+    for f in files:
+        items.append({"name": f.stem, "code": f.read_text(encoding="utf-8"), "fmt": f.suffix[1:]})
     examples[lang] = items
 tpl = pathlib.Path("site/playground.template.html").read_text(encoding="utf-8")
 ex_json = json.dumps(examples, ensure_ascii=False).replace("</", "<\\/")

@@ -58,27 +58,59 @@ fn handle(mut s: TcpStream, root: PathBuf) {
     if reader.read_line(&mut first).is_err() {
         return;
     }
-    // дочитать заголовки
+    // заголовки
+    let mut content_length = 0usize;
     loop {
         let mut l = String::new();
         match reader.read_line(&mut l) {
             Ok(0) | Err(_) => break,
             Ok(_) if l == "\r\n" || l == "\n" => break,
-            _ => {}
+            _ => {
+                if let Some((k, v)) = l.split_once(':') {
+                    if k.trim().eq_ignore_ascii_case("content-length") {
+                        content_length = v.trim().parse().unwrap_or(0);
+                    }
+                }
+            }
         }
     }
     let mut parts = first.split_whitespace();
     let method = parts.next().unwrap_or("");
     let target = parts.next().unwrap_or("/");
     if method == "OPTIONS" {
-        respond(&mut s, "204 No Content", "text/plain", b"", "Access-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: *\r\n");
-        return;
-    }
-    if method != "GET" && method != "HEAD" {
-        respond(&mut s, "405 Method Not Allowed", "text/plain; charset=utf-8", "только GET".as_bytes(), "");
+        respond(
+            &mut s,
+            "204 No Content",
+            "text/plain",
+            b"",
+            "Access-Control-Allow-Methods: GET, POST\r\nAccess-Control-Allow-Headers: *\r\n",
+        );
         return;
     }
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    if path == "/hmn" {
+        let reply = if method == "POST" {
+            if content_length > 256 * 1024 {
+                serde_json::json!({"ok": false, "diagnostics": [{"code": "E-HMN-001", "message": "текст слишком длинный (больше 256 КБ)"}]})
+            } else {
+                let mut body = vec![0u8; content_length];
+                if reader.read_exact(&mut body).is_err() {
+                    return;
+                }
+                hmn_reply(&body, &root)
+            }
+        } else {
+            // GET /hmn — есть ли ИИ на этом сервере
+            let p = crate::llm::Polza::from_env();
+            serde_json::json!({"available": p.is_ok(), "model": crate::llm::provider().model(), "reason": p.err()})
+        };
+        respond(&mut s, "200 OK", "application/json; charset=utf-8", reply.to_string().as_bytes(), "");
+        return;
+    }
+    if method != "GET" && method != "HEAD" {
+        respond(&mut s, "405 Method Not Allowed", "text/plain; charset=utf-8", "только GET (и POST /hmn)".as_bytes(), "");
+        return;
+    }
     if path == "/fetch" {
         let url = query
             .split('&')
@@ -89,7 +121,7 @@ fn handle(mut s: TcpStream, root: PathBuf) {
             respond(&mut s, "400 Bad Request", "text/plain; charset=utf-8", "адрес должен начинаться с http:// или https://".as_bytes(), "");
             return;
         }
-        match crate::host::http_agent().get(&url).call() {
+        match crate::host::agent_for(&url, 20).get(&url).call() {
             Ok(r) => {
                 let ct = r.content_type().to_string();
                 let mut body = vec![];
@@ -120,14 +152,48 @@ fn handle(mut s: TcpStream, root: PathBuf) {
     }
 }
 
+fn diag_json(d: &vladx_ast::Diagnostic) -> serde_json::Value {
+    serde_json::json!({"code": d.code, "message": d.message, "line": d.line, "col": d.col, "len": d.len, "hint": d.hint})
+}
+
+/// POST /hmn {text, lang} → перевод `.vlhmn` ключом сервера (браузеру ключ не нужен).
+fn hmn_reply(body: &[u8], root: &Path) -> serde_json::Value {
+    let req: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(e) => return serde_json::json!({"ok": false, "diagnostics": [{"code": "E-HMN-002", "message": format!("запрос не JSON: {e}")}]}),
+    };
+    let text = req["text"].as_str().unwrap_or("");
+    let lang = req["lang"].as_str().and_then(vladx_syntax::Lang::from_code).unwrap_or(vladx_syntax::Lang::Ru);
+    let dict = vladx_syntax::Dictionary::builtin();
+    let mut provider = crate::llm::provider();
+    let mut cache = crate::llm::FileCache { dir: root.join(".vladx-cache").join("hmn") };
+    match vladx_hmn::translate(text, lang, &dict, vladx_runtime::GLOBAL_NAMES, provider.as_mut(), &mut cache) {
+        Ok(t) => serde_json::json!({
+            "ok": true,
+            "program": vladx_ast::json_without_spans(&t.checked.program),
+            "vlstd": t.checked.text,
+            "confidence": t.confidence,
+            "questions": t.questions,
+            "llm_calls": t.llm_calls,
+            "cached": t.llm_calls == 0 && t.prose_segments > 0,
+            "model": provider.model(),
+        }),
+        Err(ds) => serde_json::json!({"ok": false, "diagnostics": ds.iter().map(diag_json).collect::<Vec<_>>()}),
+    }
+}
+
 pub fn serve(port: u16, root: PathBuf) -> std::io::Result<()> {
     let listener = TcpListener::bind(("0.0.0.0", port))?;
     println!("vladx serve: папка {}", root.display());
     println!("  площадка: http://localhost:{port}/site/playground.html");
     println!("  прокси:   http://localhost:{port}/fetch?url=https://example.com");
+    match crate::llm::Polza::from_env() {
+        Ok(_) => println!("  ИИ (.vlhmn): POST http://localhost:{port}/hmn, модель {}", crate::llm::provider().model()),
+        Err(e) => println!("  ИИ (.vlhmn) выключен: {e}"),
+    }
     for stream in listener.incoming().flatten() {
         let root = root.clone();
-        std::thread::spawn(move || handle(stream, root));
+        let _ = std::thread::Builder::new().stack_size(64 * 1024 * 1024).spawn(move || handle(stream, root));
     }
     Ok(())
 }

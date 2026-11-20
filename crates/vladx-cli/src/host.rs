@@ -50,16 +50,41 @@ impl CliHost {
     }
 }
 
-pub fn http_agent() -> ureq::Agent {
-    ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs(20))
-        .user_agent("vladx/0.1")
-        .try_proxy_from_env(true)
-        .build()
+/// Хост из URL без порта: `https://a.b:8000/x` → `a.b`.
+fn url_host(url: &str) -> String {
+    let rest = url.split_once("://").map(|(_, r)| r).unwrap_or(url);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let authority = authority.rsplit_once('@').map(|(_, h)| h).unwrap_or(authority);
+    if let Some(v6) = authority.strip_prefix('[') {
+        return v6.split(']').next().unwrap_or("").to_lowercase();
+    }
+    authority.split(':').next().unwrap_or("").to_lowercase()
+}
+
+/// Обходит ли хост прокси по NO_PROXY (ureq 2 сам эту переменную не читает).
+fn bypass_proxy(host: &str) -> bool {
+    if host == "localhost" || host == "::1" || host.starts_with("127.") {
+        return true;
+    }
+    let list = std::env::var("NO_PROXY").or_else(|_| std::env::var("no_proxy")).unwrap_or_default();
+    list.split(',').map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty()).any(|e| {
+        if e == "*" {
+            return true;
+        }
+        let e = e.trim_start_matches("*.").trim_start_matches('.');
+        host == e || host.ends_with(&format!(".{e}"))
+    })
+}
+
+/// HTTP-клиент для адреса: прокси окружения, если хост не в NO_PROXY.
+pub fn agent_for(url: &str, timeout_secs: u64) -> ureq::Agent {
+    let b = ureq::AgentBuilder::new().timeout(Duration::from_secs(timeout_secs)).user_agent("vladx/0.1");
+    let b = if bypass_proxy(&url_host(url)) { b } else { b.try_proxy_from_env(true) };
+    b.build()
 }
 
 pub fn http_get(url: &str) -> Result<String, String> {
-    match http_agent().get(url).call() {
+    match agent_for(url, 20).get(url).call() {
         Ok(r) => r.into_string().map_err(|e| format!("запрос не удался: {e}")),
         Err(ureq::Error::Status(code, _)) => Err(format!("сервер ответил {code}")),
         Err(e) => Err(format!("запрос не удался: {e}")),
@@ -148,5 +173,16 @@ impl Host for CliHost {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn hosts_and_no_proxy() {
+        assert_eq!(url_host("https://user@Polza.ai:443/api?x"), "polza.ai");
+        assert_eq!(url_host("http://[::1]:8000/"), "::1");
+        assert!(bypass_proxy("127.0.0.1") && bypass_proxy("localhost"));
     }
 }

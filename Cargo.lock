@@ -736,6 +736,7 @@ dependencies = [
  "serde_json",
  "ureq",
  "vladx-ast",
+ "vladx-hmn",
  "vladx-runtime",
  "vladx-syntax",
 ]

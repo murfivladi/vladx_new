@@ -13,5 +13,6 @@ path = "src/main.rs"
 vladx-ast = { path = "../vladx-ast" }
 vladx-syntax = { path = "../vladx-syntax" }
 vladx-runtime = { path = "../vladx-runtime" }
+vladx-hmn = { path = "../vladx-hmn" }
 ureq = { version = "2", default-features = false, features = ["tls", "native-certs", "gzip"] }
 serde_json = { workspace = true }

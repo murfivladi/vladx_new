@@ -55,6 +55,12 @@ main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); g
 #output .diag .hint { color: var(--ink); margin-top: 4px; }
 #output .meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
 #output pre { margin: 0; }
+.interp { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; background: var(--code-bg); }
+.interp .head { color: var(--muted); font-size: 12px; margin-bottom: 4px; font-family: system-ui, sans-serif; }
+.interp pre { margin: 0; }
+.interp .q { color: var(--warn); margin-top: 4px; }
+#lowconf { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--warn); border-radius: 10px; }
+#lowconf p { margin: 0 0 8px; }
 #askpanel { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--accent); border-radius: 10px; }
 #askpanel p { margin: 0 0 8px; }
 #askpanel .row { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -79,6 +85,16 @@ footer { color: var(--muted); font-size: 12px; padding: 0 16px 20px; }
     <option value="1">it — italiano</option>
     <option value="2">scn — sicilianu</option>
   </select>
+  <select id="fmt" aria-label="Формат программы">
+    <option value="vlstd">.vlstd — код</option>
+    <option value="vlhmn">.vlhmn — текст для ИИ</option>
+  </select>
+  <select id="tolang" aria-label="Перевести код на другой язык">
+    <option value="">перевести на…</option>
+    <option value="0">ru</option>
+    <option value="1">it</option>
+    <option value="2">scn</option>
+  </select>
   <button id="run" class="primary" disabled>▶ Запустить<kbd>Ctrl+Enter</kbd></button>
   <button id="ast" disabled>AST</button>
   <span id="status">загрузка ядра…</span>
@@ -96,6 +112,10 @@ footer { color: var(--muted); font-size: 12px; padding: 0 16px 20px; }
     <div class="panel">
       <h2>Вывод</h2>
       <div id="output" aria-live="polite"></div>
+      <div id="lowconf" hidden>
+        <p id="lowtext"></p>
+        <div class="row"><button id="runanyway">Всё равно запустить</button><button id="refine">Уточню текст</button></div>
+      </div>
       <div id="askpanel" hidden>
         <p id="asktext"></p>
         <div class="row"><button id="allow" class="primary">Разрешить и запустить</button><button id="deny">Не сейчас</button></div>
@@ -110,7 +130,7 @@ footer { color: var(--muted); font-size: 12px; padding: 0 16px 20px; }
       <div class="perms">
         <label><input type="checkbox" id="pfiles" checked> файлы</label>
         <label><input type="checkbox" id="pnet" checked> сеть</label>
-        <label>прокси <input type="text" id="proxy" value="http://localhost:8000"></label>
+        <label title="vladx serve: прокси для сети и ИИ для .vlhmn">сервер <input type="text" id="proxy" value="http://localhost:8000"></label>
         <label><input type="checkbox" id="viaproxy"> через прокси</label>
       </div>
     </div>
@@ -275,7 +295,7 @@ async function handle(m) {
     postMessage({ type: 'reply', id: m.id, version: ex.vx_version(), storageErr });
     return;
   }
-  if (m.type === 'run') {
+  if (m.type === 'run' || m.type === 'run_ast') {
     if (!ex) await instantiate();
     cfg = { proxy: m.proxy || '', viaProxy: !!m.viaProxy };
     await prepare();
@@ -287,7 +307,8 @@ async function handle(m) {
       ex.vx_set_permissions(m.perms);
       const [sp, sl] = put(m.code);
       const t0 = performance.now();
-      ex.vx_run(sp, sl, m.lang, m.maxSteps || 0);
+      if (m.type === 'run') ex.vx_run(sp, sl, m.lang, m.maxSteps || 0);
+      else ex.vx_run_ast(sp, sl, m.maxSteps || 0);
       const ms = performance.now() - t0;
       res = JSON.parse(str(ex.vx_result_ptr(), ex.vx_result_len()));
       ex.vx_free(sp, sl);
@@ -301,6 +322,15 @@ async function handle(m) {
     postMessage({ type: 'reply', id: m.id, result: res });
     try { await finalizeStore(); postMessage({ type: 'stored', files: await storedList() }); }
     catch (e) { postMessage({ type: 'stored', files: await storedList(), error: String((e && e.message) || e) }); }
+    return;
+  }
+  if (m.type === 'format') {
+    if (!ex) await instantiate();
+    const [sp, sl] = put(m.code);
+    const ok = ex.vx_format(sp, sl, m.from, m.to);
+    const text = str(ex.vx_result_ptr(), ex.vx_result_len());
+    ex.vx_free(sp, sl);
+    postMessage({ type: 'reply', id: m.id, ok: !!ok, text });
     return;
   }
   if (m.type === 'parse') {
@@ -366,7 +396,9 @@ function syncGutter() {
   let s = ''; for (let i = 1; i <= n; i++) s += i + '\n';
   gutter.textContent = s; gutter.scrollTop = code.scrollTop;
 }
-code.addEventListener('input', () => { syncGutter(); store('vladx.code.' + lang(), code.value); });
+function fmt() { return $('fmt').value; }
+function codeKey() { return 'vladx.code.' + lang() + '.' + fmt(); }
+code.addEventListener('input', () => { syncGutter(); store(codeKey(), code.value); });
 code.addEventListener('scroll', () => { gutter.scrollTop = code.scrollTop; });
 code.addEventListener('keydown', e => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); run(); return; }
@@ -387,15 +419,36 @@ function renderChips(activeName) {
     const b = document.createElement('button');
     b.textContent = ex.name.replace(/^\d+-/, ''); b.title = ex.name;
     if (ex.name === activeName) b.className = 'active';
-    b.onclick = () => { setCode(ex.code); renderChips(ex.name); run(); };
+    if (ex.fmt === 'vlhmn') b.textContent += ' ✦';
+    if (ex.fmt === 'vlhmn') b.title = ex.name + '.vlhmn — текст, который переводит ИИ';
+    b.onclick = () => { setFmt(ex.fmt || 'vlstd'); setCode(ex.code); renderChips(ex.name); run(); };
     nav.appendChild(b);
   }
 }
-function setCode(t) { code.value = t; syncGutter(); store('vladx.code.' + lang(), t); }
+function setCode(t) { code.value = t; syncGutter(); store(codeKey(), t); }
+function setFmt(f) {
+  $('fmt').value = f;
+  code.placeholder = f === 'vlhmn' ? 'Опишите программу словами. Код можно вставлять в блоки ``` … ```' : '';
+}
+function firstExample() { return (EXAMPLES[LANGS[lang()]] || []).find(e => (e.fmt || 'vlstd') === fmt()); }
+$('fmt').addEventListener('change', () => {
+  setFmt(fmt());
+  const saved = load(codeKey()); const first = firstExample();
+  setCode(saved || (first ? first.code : ''));
+  renderChips(saved ? null : first && first.name);
+});
+$('tolang').addEventListener('change', async () => {
+  const to = Number($('tolang').value); $('tolang').value = '';
+  if (!ready || isNaN(to) || fmt() !== 'vlstd') { if (fmt() !== 'vlstd') status('переводить можно код .vlstd'); return; }
+  const r = await call({ type: 'format', code: code.value, from: lang(), to });
+  if (!r.ok) { renderResult(Object.assign({ stdout: [] }, JSON.parse(r.text))); status('перевод не удался'); return; }
+  $('lang').value = String(to); store('vladx.lang', String(to));
+  setCode(r.text); renderChips(null); status('переведено на ' + LANGS[to]);
+});
 $('lang').addEventListener('change', () => {
   store('vladx.lang', String(lang()));
-  const saved = load('vladx.code.' + lang());
-  const first = (EXAMPLES[LANGS[lang()]] || [])[0];
+  const saved = load(codeKey());
+  const first = firstExample();
   setCode(saved || (first ? first.code : ''));
   renderChips(saved ? null : first && first.name);
   if (ready) run();
@@ -404,7 +457,8 @@ $('lang').addEventListener('change', () => {
 // ── вывод ──
 function renderResult(r) {
   const out = $('output'); out.innerHTML = '';
-  const src = code.value.split('\n');
+  const src = (r.vlstd != null ? r.vlstd : code.value).split('\n');
+  if (r.interp) out.appendChild(r.interp);
   for (const line of r.stdout || []) { const d = document.createElement('div'); d.textContent = line; out.appendChild(d); }
   for (const w of r.warnings || []) { const d = document.createElement('div'); d.className = 'warn'; d.textContent = 'предупреждение ' + w; out.appendChild(d); }
   for (const g of r.diagnostics || []) {
@@ -415,7 +469,7 @@ function renderResult(r) {
         esc(' '.repeat(String(g.line).length) + ' | ' + ' '.repeat(Math.max(0, g.col - 1)) + '^'.repeat(Math.max(1, g.len))) + '</div>';
     }
     if (g.hint) html += '<div class="hint">подсказка: ' + esc(g.hint) + '</div>';
-    d.innerHTML = html; if (g.line) d.onclick = () => gotoLine(g.line);
+    d.innerHTML = html; if (g.line && r.vlstd == null) d.onclick = () => gotoLine(g.line);
     out.appendChild(d);
   }
   if (r.storeError) { const d = document.createElement('div'); d.className = 'warn'; d.textContent = 'файлы не сохранены в хранилище: ' + r.storeError; out.appendChild(d); }
@@ -434,30 +488,89 @@ function showAsk(kinds) {
 }
 $('allow').onclick = () => {
   for (const k of askKinds) $(k === 'files' ? 'pfiles' : 'pnet').checked = true;
-  $('askpanel').hidden = true; run();
+  $('askpanel').hidden = true; run(pendingAst && fmt() === 'vlhmn' ? true : undefined);
 };
 $('deny').onclick = () => { $('askpanel').hidden = true; status('доступ отклонён'); };
 
+// ── .vlhmn: перевод на сервере (там ключ ИИ), исполнение — здесь, в ядре ──
+const MIN_CONFIDENCE = 0.8;
+let pendingAst = null;
+function serverBase() { return ($('proxy').value.trim() || location.origin).replace(/\/+$/, ''); }
+function interpBlock(t) {
+  const box = document.createElement('div'); box.className = 'interp';
+  const head = document.createElement('div'); head.className = 'head';
+  head.textContent = 'ИИ понял так · уверенность ' + Number(t.confidence).toFixed(2) + ' · ' +
+    (t.cached ? 'из кэша' : (t.llm_calls ? 'запросов к ИИ: ' + t.llm_calls : 'только код')) + (t.model ? ' · ' + t.model : '');
+  const pre = document.createElement('pre');
+  pre.textContent = t.vlstd.replace(/\n$/, '').split('\n').map((l, i) => String(i + 1).padStart(2) + ' │ ' + l).join('\n');
+  box.append(head, pre);
+  for (const q of t.questions || []) { const d = document.createElement('div'); d.className = 'q'; d.textContent = '? ' + q; box.appendChild(d); }
+  return box;
+}
+async function translateHmn() {
+  status('ИИ переводит текст…');
+  let t;
+  try {
+    const resp = await fetch(serverBase() + '/hmn', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: code.value, lang: LANGS[lang()] }) });
+    t = await resp.json();
+  } catch (e) {
+    return { error: { ok: false, stdout: [], diagnostics: [{ code: 'E-HMN-001', message: 'сервер ИИ недоступен: ' + serverBase() + '/hmn', hint: 'запустите vladx serve с ключом POLZA_API_KEY и укажите его адрес в поле «сервер»' }] } };
+  }
+  if (!t.ok) return { error: Object.assign({ stdout: [] }, t) };
+  return { t };
+}
+
 // ── запуск ──
 let running = false;
-async function run() {
+async function run(force) {
   if (!ready || running) return;
-  running = true; $('askpanel').hidden = true; status('выполняется…');
+  running = true; $('askpanel').hidden = true; $('lowconf').hidden = true; status('выполняется…');
   const perms = ($('pfiles').checked ? 1 : 0) | ($('pnet').checked ? 2 : 0);
   try {
-    const r = await call({
-      type: 'run', code: code.value, lang: lang(), perms, input: $('input').value,
+    let interp = null, msg;
+    if (fmt() === 'vlhmn') {
+      let t = force === true ? pendingAst : null;
+      if (!t) {
+        const tr = await translateHmn();
+        if (tr.error) { renderResult(tr.error); status('перевод не удался'); return; }
+        t = tr.t;
+      }
+      interp = interpBlock(t);
+      if (force !== true && t.confidence < MIN_CONFIDENCE) {
+        pendingAst = t;
+        renderResult({ ok: false, stdout: [], interp, vlstd: t.vlstd });
+        $('lowtext').textContent = 'ИИ не уверен, что понял текст правильно (' + Number(t.confidence).toFixed(2) + ' < ' + MIN_CONFIDENCE + '). Уточните текст или запустите как есть.';
+        $('lowconf').hidden = false; status('нужно уточнение');
+        return;
+      }
+      pendingAst = t;
+      msg = { type: 'run_ast', code: JSON.stringify(t.program) };
+    } else {
+      msg = { type: 'run', code: code.value, lang: lang() };
+    }
+    const r = await call(Object.assign(msg, {
+      perms, input: $('input').value,
       proxy: $('proxy').value.trim(), viaProxy: $('viaproxy').checked,
       time: Date.now() - new Date().getTimezoneOffset() * 60000,
-    });
+    }));
+    r.result.interp = interp;
     renderResult(r.result);
     status(r.result.ok ? 'готово' : 'ошибка');
     if (r.result.asks && r.result.asks.length) showAsk(r.result.asks);
   } catch (e) { renderResult({ ok: false, stdout: [], diagnostics: [{ code: 'E-INTERNAL', message: String(e) }] }); status('ошибка'); }
   finally { running = false; }
 }
-$('run').onclick = run;
+$('run').onclick = () => run();
+$('runanyway').onclick = () => { $('lowconf').hidden = true; run(true); };
+$('refine').onclick = () => { $('lowconf').hidden = true; code.focus(); status('уточните текст и запустите снова'); };
 $('ast').onclick = async () => {
+  if (fmt() === 'vlhmn') {
+    const tr = await translateHmn();
+    if (tr.error) { renderResult(tr.error); status('перевод не удался'); return; }
+    const out = $('output'); out.innerHTML = ''; out.appendChild(interpBlock(tr.t));
+    const pre = document.createElement('pre'); pre.textContent = JSON.stringify(tr.t.program, null, 2); out.appendChild(pre); status('AST');
+    return;
+  }
   const r = await call({ type: 'parse', code: code.value, lang: lang() });
   if (r.ok) { const out = $('output'); out.innerHTML = ''; const pre = document.createElement('pre'); pre.textContent = r.text; out.appendChild(pre); status('AST'); }
   else { renderResult(Object.assign({ stdout: [] }, JSON.parse(r.text))); status('ошибка разбора'); }
@@ -492,8 +605,9 @@ $('save').onclick = async () => {
 // ── загрузка ──
 function boot() {
   const savedLang = load('vladx.lang'); if (savedLang && LANGS[savedLang]) $('lang').value = savedLang;
-  const saved = load('vladx.code.' + lang());
-  const first = (EXAMPLES[LANGS[lang()]] || [])[0];
+  setFmt('vlstd');
+  const saved = load(codeKey());
+  const first = firstExample();
   setCode(saved || (first ? first.code : ''));
   renderChips(saved ? null : first && first.name);
 
@@ -520,6 +634,10 @@ function boot() {
     ready = true; $('run').disabled = false; $('ast').disabled = false;
     status('ядро готово' + (r.storageErr ? ' · хранилище недоступно' : ''));
     refreshFiles(); run();
+    fetch(serverBase() + '/hmn').then(x => x.json()).then(i => {
+      $('fmt').options[1].textContent = '.vlhmn — текст для ИИ' + (i.available ? '' : ' (ИИ выключен)');
+      $('fmt').title = i.available ? 'ИИ на сервере: ' + i.model : 'ИИ выключен: ' + (i.reason || '');
+    }).catch(() => { $('fmt').title = 'сервер ИИ не найден: ' + serverBase(); });
   }).catch(e => fatal(
     'WebAssembly запрещён на этой странице: ' + esc(e.message || e) + '.<br>Обычно это политика безопасности (CSP) без <code>\'wasm-unsafe-eval\'</code>, например во встроенном фрейме. Откройте страницу напрямую через <code>vladx serve</code>. Запасного движка на JavaScript нет намеренно: ядро у VladX одно.'));
 }

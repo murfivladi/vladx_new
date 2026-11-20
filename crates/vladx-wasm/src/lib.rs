@@ -2,7 +2,7 @@
 //!
 //! Экспорты: `vx_alloc`, `vx_free`, `vx_run`, `vx_parse`, `vx_result_ptr`,
 //! `vx_result_len`, `vx_set_input`, `vx_set_time`, `vx_set_permissions`,
-//! `vx_set_keywords`, `vx_version`, `vx_reset_host`.
+//! `vx_set_keywords`, `vx_version`, `vx_reset_host`, `vx_run_ast`, `vx_format`.
 //!
 //! Импорты (`env.*`): `vx_host_read`, `vx_host_write`, `vx_host_delete`,
 //! `vx_host_list`, `vx_host_get` — возвращают `u64 = (ptr << 32) | len` на буфер
@@ -256,6 +256,73 @@ pub unsafe extern "C" fn vx_parse(src_ptr: *const u8, src_len: usize, lang: u32)
     match vladx_syntax::parse(&src, lang_of(lang), &dict) {
         Ok(p) => {
             set_result(p.to_json_pretty());
+            1
+        }
+        Err(d) => {
+            set_result(serde_json::json!({"ok": false, "diagnostics": [diag_json(&d)]}).to_string());
+            0
+        }
+    }
+}
+
+fn result_json(r: &vladx_runtime::RunResult, extra: Option<(&str, &str)>) -> String {
+    let mut json = serde_json::json!({
+        "ok": r.ok,
+        "stdout": r.stdout,
+        "warnings": r.warnings.iter().map(|w| format!("{}:{}  {}  {}", w.line, w.col, w.code, w.message)).collect::<Vec<_>>(),
+        "diagnostics": r.diagnostics.iter().map(diag_json).collect::<Vec<_>>(),
+    });
+    if let Some((k, v)) = extra {
+        json[k] = v.into();
+    }
+    json.to_string()
+}
+
+/// Исполнить готовый AST (JSON, например перевод `.vlhmn` от сервера).
+/// Ядро не доверяет входу: схема → печать → разбор → сравнение → статика,
+/// и только потом исполнение. В результате есть `vlstd` — текст программы,
+/// к строкам которого относятся позиции ошибок.
+///
+/// # Safety
+/// `ptr..ptr+len` — валидный буфер UTF-8.
+#[no_mangle]
+pub unsafe extern "C" fn vx_run_ast(ptr: *const u8, len: usize, max_steps: u32) -> u32 {
+    let json = read_str(ptr, len);
+    let (dict, perms) = ST.with(|st| {
+        let st = st.borrow();
+        (st.dict.clone(), st.perms)
+    });
+    let checked = match vladx_syntax::validate::validate_json(&json, &dict, vladx_runtime::GLOBAL_NAMES) {
+        Ok(c) => c,
+        Err(ds) => {
+            let r = vladx_runtime::RunResult { ok: false, diagnostics: ds, ..Default::default() };
+            set_result(result_json(&r, None));
+            return 0;
+        }
+    };
+    let opts = Options {
+        max_steps: if max_steps == 0 { 3_000_000 } else { max_steps as u64 },
+        files: perms & 1 != 0,
+        net: perms & 2 != 0,
+        ..Options::default()
+    };
+    let r = vladx_runtime::run_program(&checked.program, &dict, &mut WebHost, opts);
+    set_result(result_json(&r, Some(("vlstd", &checked.text))));
+    r.ok as u32
+}
+
+/// Форматирование и перевод кода: язык `from` → язык `to` (0 ru, 1 it, 2 scn).
+/// Результат — текст или `{ok:false, diagnostics}`.
+///
+/// # Safety
+/// `ptr..ptr+len` — валидный буфер UTF-8.
+#[no_mangle]
+pub unsafe extern "C" fn vx_format(ptr: *const u8, len: usize, from: u32, to: u32) -> u32 {
+    let src = read_str(ptr, len);
+    let dict = ST.with(|st| st.borrow().dict.clone());
+    match vladx_syntax::format_source(&src, lang_of(from), lang_of(to), &dict) {
+        Ok(text) => {
+            set_result(text);
             1
         }
         Err(d) => {
