@@ -1,0 +1,10 @@
+[package]
+name = "vladx-ast"
+description = "Нейтральный AST VladX — контракт между всеми частями"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

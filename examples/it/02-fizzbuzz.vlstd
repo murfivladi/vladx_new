@@ -1,0 +1,15 @@
+// lo stesso FizzBuzz, parole italiane
+variabile n diventa 1
+
+finché n minore o uguale 15 {
+  se n % 15 uguale 0 allora {
+    dì "FizzBuzz"
+  } altrimenti se n % 3 uguale 0 allora {
+    dì "Fizz"
+  } altrimenti se n % 5 uguale 0 allora {
+    dì "Buzz"
+  } altrimenti {
+    dì n
+  }
+  n diventa n + 1
+}

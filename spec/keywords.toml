@@ -1,0 +1,322 @@
+# VladX — ЕДИНСТВЕННЫЙ источник ключевых слов.
+#
+# Парсер не содержит ни одной словоформы: он читает этот файл и работает
+# с нейтральными id операций. Добавить синоним = добавить строку сюда.
+#
+# Поля записи [[op]]:
+#   id      — нейтральный идентификатор (латиницей, стабилен, попадает в AST-логику)
+#   ru/it/scn — все допустимые словоформы и синонимы (фразы из нескольких слов разрешены)
+#   status  — fixed (утверждено) | draft (черновик, ждёт проверки носителем)
+#   [op.support.<роль>] — служебные слова конструкции (то, раз, из, ...)
+#
+# Сравнение слов — без учёта регистра, после нормализации NFC.
+# Из нескольких подходящих фраз выбирается самая длинная.
+# Знак «=» после имени в объявлении принимается во всех языках.
+
+schema_version = 1
+default_lang = "ru"
+langs = ["ru", "it", "scn"]
+
+# ───────────────────────── переменные ─────────────────────────
+
+[[op]]
+id = "var.declare"
+status = "draft"
+ru = ["пусть", "создай", "заведи", "объяви"]
+it = ["sia", "crea", "dichiara"]
+scn = ["fussi", "cria"]
+[op.support.be]
+ru = ["будет"]
+it = []
+scn = []
+
+[[op]]
+id = "var.mutable"
+status = "draft"
+ru = ["изменяй", "изменяемая", "переменная"]
+it = ["variabile", "modificabile"]
+scn = ["variàbbili"]
+
+[[op]]
+id = "var.assign"
+status = "draft"
+ru = ["станет", "присвой", "замени на"]
+it = ["diventa", "assegna"]
+scn = ["diventa"]
+
+# ───────────────────────── ввод-вывод ─────────────────────────
+
+[[op]]
+id = "io.say"
+status = "fixed"
+ru = ["скажи", "выведи", "напиши", "покажи"]
+it = ["dì", "mostra", "scrivi"]
+scn = ["dici", "mostra"]
+
+[[op]]
+id = "io.ask"
+status = "fixed"
+ru = ["спроси"]
+it = ["chiedi"]
+scn = ["addumanna"]
+[op.support.into]
+ru = ["и сохрани в", "и запиши в"]
+it = ["e salva in"]
+scn = ["e sarba in"]
+
+# ───────────────────────── управление ─────────────────────────
+
+[[op]]
+id = "ctrl.if"
+status = "fixed"
+ru = ["если"]
+it = ["se"]
+scn = ["si"]
+[op.support.then]
+ru = ["то"]
+it = ["allora"]
+scn = ["allura"]
+
+[[op]]
+id = "ctrl.else"
+status = "fixed"
+ru = ["иначе", "в противном случае"]
+it = ["altrimenti", "sennò"]
+scn = ["sinò", "autrimenti"]
+
+[[op]]
+id = "ctrl.while"
+status = "fixed"
+ru = ["пока", "до тех пор пока"]
+it = ["finché", "mentre"]
+scn = ["mentri"]
+
+[[op]]
+id = "ctrl.repeat"
+status = "draft"
+ru = ["повторяй"]
+it = ["ripeti"]
+scn = ["arrèpiti"]
+[op.support.times]
+ru = ["раз"]
+it = ["volte"]
+scn = ["voti"]
+
+[[op]]
+id = "ctrl.foreach"
+status = "draft"
+ru = ["для каждого"]
+it = ["per ogni"]
+scn = ["pi ogni"]
+[op.support.iter]
+ru = ["из", "в"]
+it = ["di", "in"]
+scn = ["di", "nni"]
+
+[[op]]
+id = "ctrl.iterate"
+status = "draft"
+# Сахар над ctrl.foreach. Открытый вопрос §14.5: парсер пока сообщает,
+# что конструкция не поддержана, и предлагает «для каждого».
+ru = ["пройди по"]
+it = ["passa per"]
+scn = ["passa pi"]
+
+[[op]]
+id = "ctrl.break"
+status = "fixed"
+ru = ["прерви", "останови"]
+it = ["interrompi"]
+scn = ["ntirrumpi"]
+
+[[op]]
+id = "ctrl.continue"
+status = "fixed"
+ru = ["продолжи", "пропусти"]
+it = ["continua", "salta"]
+scn = ["cuntinua"]
+
+# ───────────────────────── функции и объекты ─────────────────────────
+
+[[op]]
+id = "fn.declare"
+status = "fixed"
+ru = ["функция"]
+it = ["funzione"]
+scn = ["funzioni"]
+
+[[op]]
+id = "fn.return"
+status = "fixed"
+ru = ["верни", "возвращает"]
+it = ["rendi", "restituisci"]
+scn = ["arritorna"]
+
+[[op]]
+id = "fn.self"
+status = "fixed"
+ru = ["это"]
+it = ["questo"]
+scn = ["chistu"]
+
+[[op]]
+id = "obj.withProto"
+status = "draft"
+ru = ["создай объект с прототипом", "с прототипом"]
+it = ["crea oggetto con prototipo", "con prototipo"]
+scn = ["cria oggettu cu prototipu", "cu prototipu"]
+
+# ───────────────────────── ошибки ─────────────────────────
+
+[[op]]
+id = "err.try"
+status = "draft"
+ru = ["попробуй"]
+it = ["prova"]
+scn = ["prova"]
+
+[[op]]
+id = "err.catch"
+status = "draft"
+ru = ["поймай", "при ошибке"]
+it = ["cattura", "in caso di errore"]
+scn = ["acchiappa"]
+
+[[op]]
+id = "err.throw"
+status = "draft"
+ru = ["брось", "вызови ошибку"]
+it = ["lancia"]
+scn = ["lancia"]
+
+# ───────────────────────── модули ─────────────────────────
+
+[[op]]
+id = "mod.import"
+status = "draft"
+ru = ["импортируй", "подключи"]
+it = ["importa", "includi"]
+scn = ["mpòrta"]
+[op.support.from]
+ru = ["из"]
+it = ["da"]
+scn = ["di"]
+[op.support.take]
+ru = ["возьми"]
+it = ["prendi"]
+scn = ["pigghia"]
+
+# ═════════════════ слова выражений: литералы, сравнения, логика ═════════════════
+# Это не «операции» (их ровно 21 выше), но тоже зарезервированные слова.
+
+[[word]]
+id = "lit.null"
+ru = ["ничего", "пусто"]
+it = ["niente"]
+scn = ["nenti"]
+
+[[word]]
+id = "lit.true"
+ru = ["истина", "правда", "да"]
+it = ["vero"]
+scn = ["veru"]
+
+[[word]]
+id = "lit.false"
+ru = ["ложь", "неправда", "нет"]
+it = ["falso"]
+scn = ["farsu"]
+
+[[word]]
+id = "cmp.gt"
+ru = ["больше"]
+it = ["maggiore"]
+scn = ["cchiù granni"]
+
+[[word]]
+id = "cmp.lt"
+ru = ["меньше"]
+it = ["minore"]
+scn = ["cchiù nicu"]
+
+[[word]]
+id = "cmp.eq"
+ru = ["равно", "равен"]
+it = ["uguale"]
+scn = ["uguali"]
+
+[[word]]
+id = "cmp.ne"
+ru = ["не равно"]
+it = ["diverso da"]
+scn = ["diversu di"]
+
+[[word]]
+id = "cmp.ge"
+ru = ["больше или равно"]
+it = ["maggiore o uguale"]
+scn = []
+
+[[word]]
+id = "cmp.le"
+ru = ["меньше или равно"]
+it = ["minore o uguale"]
+scn = []
+
+[[word]]
+id = "logic.and"
+ru = ["и"]
+it = ["e"]
+scn = ["e"]
+
+[[word]]
+id = "logic.or"
+ru = ["или"]
+it = ["o"]
+scn = ["o"]
+
+[[word]]
+id = "logic.not"
+ru = ["не"]
+it = ["non"]
+scn = ["nun"]
+
+# ═════════════════ имена типов для подсказок у параметров ═════════════════
+# Не зарезервированы: ищутся только после «:» в списке параметров.
+# В AST попадает нейтральный id. Сицилийские формы ждут носителя (§14).
+
+[[type]]
+id = "number"
+ru = ["число"]
+it = ["numero"]
+scn = []
+
+[[type]]
+id = "string"
+ru = ["строка", "текст"]
+it = ["testo", "stringa"]
+scn = []
+
+[[type]]
+id = "bool"
+ru = ["логическое"]
+it = ["booleano"]
+scn = []
+
+[[type]]
+id = "list"
+ru = ["список"]
+it = ["lista"]
+scn = []
+
+[[type]]
+id = "map"
+ru = ["словарь", "объект"]
+it = ["mappa", "oggetto"]
+scn = []
+
+[[type]]
+id = "function"
+ru = ["функция"]
+it = ["funzione"]
+scn = []

@@ -1,0 +1,7 @@
+/target
+node_modules/
+package-lock.json
+# файлы, которые создают примеры при запуске
+examples/**/заметка.txt
+examples/**/папка/
+*.wasm

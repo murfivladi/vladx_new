@@ -1,0 +1,4 @@
+# Импорты vx_host_* предоставляет JS-страница, а не линкер.
+# Стек 32 МБ: интерпретатор рекурсивный, предел глубины VladX — 1000 вызовов.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--allow-undefined", "-C", "link-arg=-zstack-size=33554432"]

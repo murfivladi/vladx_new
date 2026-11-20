@@ -1,0 +1,16 @@
+sia nome = "mondo"
+dì "ciao, {nome}"
+
+funzione somma(a, b) {
+  rendi a + b
+}
+
+se somma(2, 3) maggiore 4 allora {
+  dì "funziona"
+} altrimenti {
+  dì "no"
+}
+
+per ogni cosa in ["pane", "latte"] {
+  dì "- {cosa}"
+}

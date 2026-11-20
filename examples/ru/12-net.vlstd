@@ -1,0 +1,7 @@
+пусть ответ будет rete.получиJson("https://api.github.com/repos/rust-lang/rust")
+скажи "звёзд у rust: {ответ.stargazers_count}"
+скажи "язык: {ответ.language}"
+
+пусть страница будет rete.получи("https://example.com")
+пусть начало будет testo.кусок(страница, 0, 45)
+скажи "начало страницы: {начало}"

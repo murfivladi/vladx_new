@@ -1,0 +1,7 @@
+// sicilianu: l'ortografia nun è ancora stabbilita (§14)
+fussi nomu = "munnu"
+dici "ciao, {nomu}"
+
+pi ogni cosa di ["pani", "latti"] {
+  dici "- {cosa}"
+}

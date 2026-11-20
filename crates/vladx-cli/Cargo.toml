@@ -1,0 +1,17 @@
+[package]
+name = "vladx-cli"
+description = "CLI VladX: run, parse, check, keywords, serve"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "vladx"
+path = "src/main.rs"
+
+[dependencies]
+vladx-ast = { path = "../vladx-ast" }
+vladx-syntax = { path = "../vladx-syntax" }
+vladx-runtime = { path = "../vladx-runtime" }
+ureq = { version = "2", default-features = false, features = ["tls", "native-certs", "gzip"] }
+serde_json = { workspace = true }

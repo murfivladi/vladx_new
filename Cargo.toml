@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/vladx-ast",
+    "crates/vladx-syntax",
+    "crates/vladx-runtime",
+    "crates/vladx-wasm",
+    "crates/vladx-cli",
+    "crates/xtask",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+toml = { version = "0.8", default-features = false, features = ["parse"] }
+indexmap = "2"
+unicode-normalization = "0.1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"

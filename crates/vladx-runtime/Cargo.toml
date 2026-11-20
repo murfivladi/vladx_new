@@ -1,0 +1,12 @@
+[package]
+name = "vladx-runtime"
+description = "Интерпретатор VladX: значения, скоупы, прототипы, исключения, stdlib"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+vladx-ast = { path = "../vladx-ast" }
+vladx-syntax = { path = "../vladx-syntax" }
+indexmap = { workspace = true }
+serde_json = { workspace = true }
