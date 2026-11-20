@@ -1,4 +1,15 @@
 [package]
 name = "vladx-wasm"
+description = "VladX в WebAssembly: C-ABI без wasm-bindgen, импорты vx_host_*"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+vladx-ast = { path = "../vladx-ast" }
+vladx-syntax = { path = "../vladx-syntax" }
+vladx-runtime = { path = "../vladx-runtime" }
+serde_json = { workspace = true }

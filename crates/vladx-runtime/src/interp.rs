@@ -123,7 +123,7 @@ impl<'h> Interp<'h> {
                 sp,
             );
         }
-        if self.steps % 65_536 == 0 {
+        if self.steps.is_multiple_of(65_536) {
             if let Some(msg) = self.host.should_stop() {
                 return fail("E-LIMIT-003", msg, sp);
             }
@@ -343,7 +343,7 @@ impl<'h> Interp<'h> {
                 let tv = self.eval(times, env)?;
                 let n = match tv {
                     Value::Num(n) => n,
-                    other => self.to_num(&other, sp)?,
+                    other => self.num_of(&other, sp)?,
                 };
                 if n < 0.0 {
                     return fail_hint("E-VALUE-001", "Число повторов не может быть отрицательным", "укажите 0 или больше", sp);
@@ -519,7 +519,7 @@ impl<'h> Interp<'h> {
                 let v = self.eval(operand, env)?;
                 match op {
                     UnOp::Not => Value::Bool(!v.truthy()),
-                    UnOp::Neg => Value::Num(-self.to_num(&v, sp)?),
+                    UnOp::Neg => Value::Num(-self.num_of(&v, sp)?),
                 }
             }
             Expr::Binary { op: BinOp::And, left, right, .. } => {
@@ -694,10 +694,7 @@ impl<'h> Interp<'h> {
                 }
                 _ => None,
             };
-            match next {
-                Some(n) => cur = n,
-                None => return None,
-            }
+            cur = next?;
         }
         None
     }
@@ -760,7 +757,7 @@ impl<'h> Interp<'h> {
     // ───────────── арифметика и сравнения ─────────────
 
     /// Число для арифметики с правилами приведения §4.3.
-    pub(crate) fn to_num(&mut self, v: &Value, sp: Span) -> R<f64> {
+    pub(crate) fn num_of(&mut self, v: &Value, sp: Span) -> R<f64> {
         match v {
             Value::Num(n) => Ok(*n),
             Value::Bool(b) => Ok(if *b { 1.0 } else { 0.0 }),
@@ -803,14 +800,14 @@ impl<'h> Interp<'h> {
                     Ok(Value::list(v))
                 }
                 _ => {
-                    let a = self.to_num(&l, sp)?;
-                    let b = self.to_num(&r, sp)?;
+                    let a = self.num_of(&l, sp)?;
+                    let b = self.num_of(&r, sp)?;
                     Ok(Value::Num(a + b))
                 }
             },
             Sub | Mul | Div | Mod => {
-                let a = self.to_num(&l, sp)?;
-                let b = self.to_num(&r, sp)?;
+                let a = self.num_of(&l, sp)?;
+                let b = self.num_of(&r, sp)?;
                 Ok(Value::Num(match op {
                     Sub => a - b,
                     Mul => a * b,

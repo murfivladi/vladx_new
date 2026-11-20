@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VladX — площадка</title>
+<style>
+:root {
+  --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1c1a; --muted: #6b6860; --line: #e2dfd6;
+  --accent: #b4441f; --accent-ink: #ffffff; --code-bg: #fbfaf7; --gutter: #a39f94;
+  --ok: #2f7d4a; --warn: #9a6a00; --warn-bg: #fff6dc; --err: #b3261e; --err-bg: #fdecea;
+  --chip: #efece4; --focus: #2b6cb0;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161513; --panel: #1f1e1b; --ink: #ecebe6; --muted: #a09d94; --line: #34322d;
+    --accent: #e0703f; --accent-ink: #1a1009; --code-bg: #1a1917; --gutter: #6e6b63;
+    --ok: #6cc28b; --warn: #e3b341; --warn-bg: #2d2615; --err: #f2867c; --err-bg: #34191a;
+    --chip: #2a2925; --focus: #79a8e0;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+kbd { font: 11px ui-monospace, monospace; opacity: .75; margin-left: 6px; }
+header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.brand { font-weight: 800; font-size: 19px; letter-spacing: -.02em; margin-right: 6px; }
+.brand span { font-weight: 500; font-size: 12px; color: var(--muted); margin-left: 4px; }
+select { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+#status { color: var(--muted); font-size: 13px; margin-left: auto; }
+#banner { margin: 12px 16px 0; padding: 12px 14px; border-radius: 10px; background: var(--err-bg); color: var(--err); border: 1px solid var(--err); }
+#banner code { font-family: ui-monospace, monospace; }
+nav#chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px 0; }
+nav#chips button { background: var(--chip); border: 1px solid transparent; border-radius: 999px; padding: 3px 11px; font-size: 13px; }
+nav#chips button.active { border-color: var(--accent); color: var(--accent); }
+main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; padding: 12px 16px 24px; }
+@media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); } }
+.editor { display: flex; border: 1px solid var(--line); border-radius: 10px; background: var(--code-bg); overflow: hidden; height: min(70vh, 640px); min-height: 280px; }
+#gutter { margin: 0; padding: 12px 8px 12px 12px; text-align: right; color: var(--gutter); user-select: none; overflow: hidden;
+  font: 14px/1.55 ui-monospace, "SF Mono", Menlo, Consolas, monospace; min-width: 3.2em; border-right: 1px solid var(--line); }
+#code { flex: 1; border: 0; resize: none; padding: 12px; background: transparent; outline: none; white-space: pre; overflow: auto;
+  font: 14px/1.55 ui-monospace, "SF Mono", Menlo, Consolas, monospace; tab-size: 2; }
+.side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+#output { font: 13.5px/1.5 ui-monospace, Menlo, Consolas, monospace; min-height: 120px; max-height: 46vh; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+#output .warn { color: var(--warn); background: var(--warn-bg); border-radius: 6px; padding: 2px 6px; margin: 2px 0; }
+#output .diag { color: var(--err); background: var(--err-bg); border-radius: 8px; padding: 8px 10px; margin: 6px 0; cursor: pointer; }
+#output .diag .src { color: var(--ink); opacity: .85; margin-top: 4px; }
+#output .diag .hint { color: var(--ink); margin-top: 4px; }
+#output .meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
+#output pre { margin: 0; }
+#askpanel { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--accent); border-radius: 10px; }
+#askpanel p { margin: 0 0 8px; }
+#askpanel .row { display: flex; gap: 8px; flex-wrap: wrap; }
+textarea#input { width: 100%; min-height: 54px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--code-bg); resize: vertical; }
+.perms { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 14px; }
+.perms input[type=text] { width: 200px; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; background: var(--code-bg); }
+#files { list-style: none; margin: 0 0 8px; padding: 0; font: 13px ui-monospace, Menlo, Consolas, monospace; }
+#files li { display: flex; align-items: center; gap: 6px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+#files li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#files li button { padding: 1px 8px; font-size: 12px; }
+#files li.empty { color: var(--muted); border: 0; font-family: inherit; }
+.row { display: flex; gap: 6px; flex-wrap: wrap; }
+.row input { flex: 1; min-width: 120px; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; background: var(--code-bg); }
+footer { color: var(--muted); font-size: 12px; padding: 0 16px 20px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">VladX<span>v0.1</span></div>
+  <select id="lang" aria-label="Язык ключевых слов">
+    <option value="0">ru — русский</option>
+    <option value="1">it — italiano</option>
+    <option value="2">scn — sicilianu</option>
+  </select>
+  <button id="run" class="primary" disabled>▶ Запустить<kbd>Ctrl+Enter</kbd></button>
+  <button id="ast" disabled>AST</button>
+  <span id="status">загрузка ядра…</span>
+</header>
+<div id="banner" hidden></div>
+<nav id="chips" aria-label="Примеры"></nav>
+<main>
+  <section>
+    <div class="editor">
+      <pre id="gutter" aria-hidden="true">1</pre>
+      <textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Код программы"></textarea>
+    </div>
+  </section>
+  <section class="side">
+    <div class="panel">
+      <h2>Вывод</h2>
+      <div id="output" aria-live="polite"></div>
+      <div id="askpanel" hidden>
+        <p id="asktext"></p>
+        <div class="row"><button id="allow" class="primary">Разрешить и запустить</button><button id="deny">Не сейчас</button></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Ввод для «спроси»</h2>
+      <textarea id="input" aria-label="Ответы для спроси" placeholder="по одному ответу на строку">Аня</textarea>
+    </div>
+    <div class="panel">
+      <h2>Доступ</h2>
+      <div class="perms">
+        <label><input type="checkbox" id="pfiles" checked> файлы</label>
+        <label><input type="checkbox" id="pnet" checked> сеть</label>
+        <label>прокси <input type="text" id="proxy" value="http://localhost:8000"></label>
+        <label><input type="checkbox" id="viaproxy"> через прокси</label>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Файлы хранилища</h2>
+      <ul id="files"><li class="empty">пусто</li></ul>
+      <div class="row">
+        <input id="savename" placeholder="имя.vlstd" aria-label="Имя файла">
+        <button id="save">Сохранить редактор</button>
+        <button id="refresh" title="Обновить список">↻</button>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>Ядро — Rust, скомпилированный в WebAssembly; в странице нет реализации языка, только вызовы <code>vx_*</code>. Файлы живут в хранилище этой страницы (OPFS) между запусками.</footer>
+
+<script type="text/plain" id="worker-src">
+'use strict';
+// Worker: единственное место, где браузер разрешает ждать синхронно
+// (синхронный OPFS и синхронный XHR). Ядро — WASM, здесь только хост.
+let ex = null, wasmBytes = null;
+const enc = new TextEncoder(), dec = new TextDecoder();
+const INDEX = '.__vladx_index';
+let cfg = { proxy: '', viaProxy: false };
+let root = null, storageErr = null;
+let handles = new Map(), index = new Set(), wbuf = new Map(), dels = new Set(), asks = [];
+
+function str(p, l) { return dec.decode(new Uint8Array(ex.memory.buffer, p, l).slice()); }
+function put(s) {
+  const b = enc.encode(s); const p = ex.vx_alloc(b.length);
+  new Uint8Array(ex.memory.buffer, p, b.length).set(b); return [p, b.length];
+}
+function ret(s) { const [p, l] = put(s); return (BigInt(p) << 32n) | BigInt(l); }
+function guard(fn) {
+  try { const v = fn(); return ret('ok\n' + (v == null ? '' : v)); }
+  catch (e) { return ret('err\n' + ((e && e.message) || String(e))); }
+}
+function notFound(p) { return new Error('файл «' + p + '» не найден в хранилище браузера'); }
+function normPath(p) {
+  const parts = String(p).replace(/\\/g, '/').split('/').filter(x => x && x !== '.');
+  if (parts.includes('..')) throw new Error('путь «' + p + '» выходит за пределы хранилища браузера');
+  if (!parts.length) throw new Error('пустое имя файла');
+  const n = parts.join('/');
+  if (n === INDEX) throw new Error('имя «' + INDEX + '» служебное');
+  return n;
+}
+function noStore() { if (storageErr) throw new Error('хранилище браузера недоступно: ' + storageErr); }
+function listFiles() {
+  const s = new Set(index); for (const k of wbuf.keys()) s.add(k); for (const k of dels) s.delete(k);
+  return [...s].sort();
+}
+function readFile(path) {
+  const p = normPath(path);
+  if (dels.has(p)) throw notFound(p);
+  if (wbuf.has(p)) return wbuf.get(p);
+  const h = handles.get(p);
+  if (!h) { noStore(); throw notFound(p); }
+  const buf = new Uint8Array(h.getSize()); h.read(buf, { at: 0 }); return dec.decode(buf);
+}
+
+// ── сеть: синхронный XHR (в worker'е это разрешено) ──
+function xhr(url) {
+  const x = new XMLHttpRequest();
+  x.open('GET', url, false);
+  try { x.send(); } catch (e) { const er = new Error('network'); er.net = true; throw er; }
+  if (x.status === 0) { const er = new Error('network'); er.net = true; throw er; }
+  if (x.status >= 400) throw new Error('сервер ответил ' + x.status);
+  return x.responseText;
+}
+function proxied(url) { return cfg.proxy.replace(/\/+$/, '') + '/fetch?url=' + encodeURIComponent(url); }
+function httpGet(url) {
+  const proxyHint = 'Включите «через прокси» и запустите vladx serve (' + (cfg.proxy || 'http://localhost:8000') + ')';
+  if (cfg.viaProxy) {
+    if (!cfg.proxy) throw new Error('не указан адрес прокси');
+    try { return xhr(proxied(url)); }
+    catch (e) { if (e.net) throw new Error('прокси ' + cfg.proxy + ' недоступен: запустите vladx serve'); throw e; }
+  }
+  try { return xhr(url); }
+  catch (e) {
+    if (!e.net) throw e;
+    throw new Error('запрос не удался: сайт не разрешает чтение из браузера (нет CORS) или недоступен. ' + proxyHint);
+  }
+}
+
+const imports = { env: {
+  vx_host_read: (p, l) => guard(() => readFile(str(p, l))),
+  vx_host_write: (pp, pl, dp, dl) => guard(() => {
+    const p = normPath(str(pp, pl)); noStore();
+    wbuf.set(p, str(dp, dl)); dels.delete(p); return '';
+  }),
+  vx_host_delete: (p, l) => guard(() => {
+    const k = normPath(str(p, l));
+    if (!listFiles().includes(k)) throw notFound(k);
+    wbuf.delete(k); dels.add(k); return '';
+  }),
+  vx_host_list: () => guard(() => listFiles().join('\n')),
+  vx_host_get: (p, l) => guard(() => httpGet(str(p, l))),
+  // Блокирующе ждать ответа человека нельзя: сообщаем странице и отказываем.
+  vx_host_ask: (kind) => { const k = kind === 1 ? 'files' : 'net'; if (!asks.includes(k)) asks.push(k); return 0; },
+}};
+
+// ── OPFS ──
+async function getRoot() {
+  if (root || storageErr) return root;
+  try { root = await navigator.storage.getDirectory(); }
+  catch (e) { storageErr = (e && e.message) || String(e); }
+  return root;
+}
+async function fileHandle(path, create) {
+  const parts = path.split('/'); let dir = root;
+  for (const d of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(d, { create });
+  return dir.getFileHandle(parts[parts.length - 1], { create });
+}
+async function readIndex() {
+  try {
+    const fh = await root.getFileHandle(INDEX);
+    return (await (await fh.getFile()).text()).split('\n').filter(Boolean);
+  } catch (e) { return []; }
+}
+async function writeText(path, text) {
+  const fh = await fileHandle(path, true);
+  const h = await fh.createSyncAccessHandle();   // промис — поэтому только вне vx_run
+  try { const b = enc.encode(text); h.truncate(0); h.write(b, { at: 0 }); h.flush(); }
+  finally { h.close(); }
+}
+async function removePath(p) {
+  const parts = p.split('/'); let dir = root;
+  for (const d of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(d);
+  await dir.removeEntry(parts[parts.length - 1]);
+}
+// Ручки открываются ДО запуска: создать их синхронно нельзя.
+async function prepare() {
+  handles = new Map(); wbuf = new Map(); dels = new Set(); asks = []; index = new Set();
+  if (!(await getRoot())) return;
+  for (const p of await readIndex()) {
+    try { const fh = await fileHandle(p, false); handles.set(p, await fh.createSyncAccessHandle()); index.add(p); }
+    catch (e) { /* файл исчез — выпадет из индекса */ }
+  }
+}
+// ...и закрываются сразу после: иначе файл нельзя перезаписать или удалить.
+function release() { for (const h of handles.values()) { try { h.close(); } catch (e) {} } handles.clear(); }
+async function finalizeStore() {
+  if (!root) return;
+  const changed = wbuf.size > 0 || dels.size > 0;
+  for (const p of dels) { try { await removePath(p); } catch (e) {} index.delete(p); }
+  for (const [p, t] of wbuf) { await writeText(p, t); index.add(p); }
+  if (changed) await writeText(INDEX, [...index].sort().join('\n'));
+  wbuf = new Map(); dels = new Set();
+}
+async function storedList() { if (!(await getRoot())) return []; return (await readIndex()).sort(); }
+
+async function instantiate() {
+  const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
+  ex = instance.exports;
+}
+
+async function handle(m) {
+  if (m.type === 'boot') {
+    wasmBytes = Uint8Array.from(atob(m.wasm), c => c.charCodeAt(0));
+    await instantiate();
+    await getRoot();
+    postMessage({ type: 'reply', id: m.id, version: ex.vx_version(), storageErr });
+    return;
+  }
+  if (m.type === 'run') {
+    if (!ex) await instantiate();
+    cfg = { proxy: m.proxy || '', viaProxy: !!m.viaProxy };
+    await prepare();
+    let res;
+    try {
+      ex.vx_reset_host();
+      ex.vx_set_time(m.time);
+      const [ip, il] = put(m.input || ''); ex.vx_set_input(ip, il); ex.vx_free(ip, il);
+      ex.vx_set_permissions(m.perms);
+      const [sp, sl] = put(m.code);
+      const t0 = performance.now();
+      ex.vx_run(sp, sl, m.lang, m.maxSteps || 0);
+      const ms = performance.now() - t0;
+      res = JSON.parse(str(ex.vx_result_ptr(), ex.vx_result_len()));
+      ex.vx_free(sp, sl);
+      res.ms = ms;
+    } catch (e) {
+      ex = null; // после аварии ядро пересоздаётся
+      res = { ok: false, stdout: [], warnings: [], diagnostics: [{ code: 'E-INTERNAL', message: 'внутренняя ошибка ядра: ' + ((e && e.message) || e), line: 0, col: 0, len: 0 }] };
+    }
+    release();
+    res.asks = asks;
+    postMessage({ type: 'reply', id: m.id, result: res });
+    try { await finalizeStore(); postMessage({ type: 'stored', files: await storedList() }); }
+    catch (e) { postMessage({ type: 'stored', files: await storedList(), error: String((e && e.message) || e) }); }
+    return;
+  }
+  if (m.type === 'parse') {
+    if (!ex) await instantiate();
+    const [sp, sl] = put(m.code);
+    const ok = ex.vx_parse(sp, sl, m.lang);
+    const text = str(ex.vx_result_ptr(), ex.vx_result_len());
+    ex.vx_free(sp, sl);
+    postMessage({ type: 'reply', id: m.id, ok: !!ok, text });
+    return;
+  }
+  if (m.type === 'fs') {
+    if (!(await getRoot())) throw new Error('хранилище браузера недоступно: ' + storageErr);
+    const idx = new Set(await readIndex());
+    let out = {};
+    if (m.op === 'read') {
+      const fh = await fileHandle(normPath(m.path), false);
+      out.text = await (await fh.getFile()).text();
+    } else if (m.op === 'write') {
+      const p = normPath(m.path); await writeText(p, m.text); idx.add(p);
+      await writeText(INDEX, [...idx].sort().join('\n'));
+    } else if (m.op === 'delete') {
+      const p = normPath(m.path); try { await removePath(p); } catch (e) {} idx.delete(p);
+      await writeText(INDEX, [...idx].sort().join('\n'));
+    }
+    out.files = [...idx].sort();
+    postMessage({ type: 'reply', id: m.id, ...out });
+  }
+}
+
+let queue = Promise.resolve();
+onmessage = (ev) => {
+  const m = ev.data;
+  queue = queue.then(() => handle(m)).catch(e => postMessage({ type: 'error', id: m.id, message: String((e && e.message) || e) }));
+};
+</script>
+
+<script>
+'use strict';
+const WASM_B64 = "__WASM_B64__";
+const EXAMPLES = __EXAMPLES_JSON__;
+const LANGS = ['ru', 'it', 'scn'];
+const $ = id => document.getElementById(id);
+let worker = null, reqId = 0, ready = false;
+const pending = new Map();
+
+function call(msg) {
+  return new Promise((resolve, reject) => {
+    const id = ++reqId; pending.set(id, { resolve, reject });
+    worker.postMessage({ ...msg, id });
+  });
+}
+function status(t) { $('status').textContent = t; }
+function fatal(html) { const b = $('banner'); b.innerHTML = html; b.hidden = false; status('ядро не запущено'); }
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+
+// ── редактор ──
+const code = $('code'), gutter = $('gutter');
+function syncGutter() {
+  const n = code.value.split('\n').length;
+  let s = ''; for (let i = 1; i <= n; i++) s += i + '\n';
+  gutter.textContent = s; gutter.scrollTop = code.scrollTop;
+}
+code.addEventListener('input', () => { syncGutter(); store('vladx.code.' + lang(), code.value); });
+code.addEventListener('scroll', () => { gutter.scrollTop = code.scrollTop; });
+code.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); run(); return; }
+  if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); code.setRangeText('  ', code.selectionStart, code.selectionEnd, 'end'); syncGutter(); }
+});
+function gotoLine(line) {
+  const lines = code.value.split('\n'); let pos = 0;
+  for (let i = 0; i < line - 1 && i < lines.length; i++) pos += lines[i].length + 1;
+  code.focus(); code.setSelectionRange(pos, pos + (lines[line - 1] || '').length);
+  code.scrollTop = Math.max(0, (line - 4) * 21.7);
+}
+
+// ── примеры ──
+function lang() { return Number($('lang').value); }
+function renderChips(activeName) {
+  const nav = $('chips'); nav.innerHTML = '';
+  for (const ex of EXAMPLES[LANGS[lang()]] || []) {
+    const b = document.createElement('button');
+    b.textContent = ex.name.replace(/^\d+-/, ''); b.title = ex.name;
+    if (ex.name === activeName) b.className = 'active';
+    b.onclick = () => { setCode(ex.code); renderChips(ex.name); run(); };
+    nav.appendChild(b);
+  }
+}
+function setCode(t) { code.value = t; syncGutter(); store('vladx.code.' + lang(), t); }
+$('lang').addEventListener('change', () => {
+  store('vladx.lang', String(lang()));
+  const saved = load('vladx.code.' + lang());
+  const first = (EXAMPLES[LANGS[lang()]] || [])[0];
+  setCode(saved || (first ? first.code : ''));
+  renderChips(saved ? null : first && first.name);
+  if (ready) run();
+});
+
+// ── вывод ──
+function renderResult(r) {
+  const out = $('output'); out.innerHTML = '';
+  const src = code.value.split('\n');
+  for (const line of r.stdout || []) { const d = document.createElement('div'); d.textContent = line; out.appendChild(d); }
+  for (const w of r.warnings || []) { const d = document.createElement('div'); d.className = 'warn'; d.textContent = 'предупреждение ' + w; out.appendChild(d); }
+  for (const g of r.diagnostics || []) {
+    const d = document.createElement('div'); d.className = 'diag';
+    let html = '<b>' + esc(g.code) + '</b>' + (g.line ? '  строка ' + g.line + ', колонка ' + g.col : '') + '\n' + esc(g.message);
+    if (g.line && src[g.line - 1] != null) {
+      html += '<div class="src">' + esc(g.line + ' | ' + src[g.line - 1]) + '\n' +
+        esc(' '.repeat(String(g.line).length) + ' | ' + ' '.repeat(Math.max(0, g.col - 1)) + '^'.repeat(Math.max(1, g.len))) + '</div>';
+    }
+    if (g.hint) html += '<div class="hint">подсказка: ' + esc(g.hint) + '</div>';
+    d.innerHTML = html; if (g.line) d.onclick = () => gotoLine(g.line);
+    out.appendChild(d);
+  }
+  if (r.storeError) { const d = document.createElement('div'); d.className = 'warn'; d.textContent = 'файлы не сохранены в хранилище: ' + r.storeError; out.appendChild(d); }
+  const m = document.createElement('div'); m.className = 'meta';
+  m.textContent = (r.ok ? 'готово' : 'остановлено с ошибкой') + (r.ms != null ? ' · ' + r.ms.toFixed(1) + ' мс' : '');
+  out.appendChild(m);
+}
+
+// ── «просьба вместо отказа» ──
+const ASK_TEXT = { files: 'файлы в хранилище страницы', net: 'сеть (запросы к другим сайтам)' };
+let askKinds = [];
+function showAsk(kinds) {
+  askKinds = kinds;
+  $('asktext').textContent = 'Программа просит доступ: ' + kinds.map(k => ASK_TEXT[k]).join(' и ') + '.';
+  $('askpanel').hidden = false;
+}
+$('allow').onclick = () => {
+  for (const k of askKinds) $(k === 'files' ? 'pfiles' : 'pnet').checked = true;
+  $('askpanel').hidden = true; run();
+};
+$('deny').onclick = () => { $('askpanel').hidden = true; status('доступ отклонён'); };
+
+// ── запуск ──
+let running = false;
+async function run() {
+  if (!ready || running) return;
+  running = true; $('askpanel').hidden = true; status('выполняется…');
+  const perms = ($('pfiles').checked ? 1 : 0) | ($('pnet').checked ? 2 : 0);
+  try {
+    const r = await call({
+      type: 'run', code: code.value, lang: lang(), perms, input: $('input').value,
+      proxy: $('proxy').value.trim(), viaProxy: $('viaproxy').checked,
+      time: Date.now() - new Date().getTimezoneOffset() * 60000,
+    });
+    renderResult(r.result);
+    status(r.result.ok ? 'готово' : 'ошибка');
+    if (r.result.asks && r.result.asks.length) showAsk(r.result.asks);
+  } catch (e) { renderResult({ ok: false, stdout: [], diagnostics: [{ code: 'E-INTERNAL', message: String(e) }] }); status('ошибка'); }
+  finally { running = false; }
+}
+$('run').onclick = run;
+$('ast').onclick = async () => {
+  const r = await call({ type: 'parse', code: code.value, lang: lang() });
+  if (r.ok) { const out = $('output'); out.innerHTML = ''; const pre = document.createElement('pre'); pre.textContent = r.text; out.appendChild(pre); status('AST'); }
+  else { renderResult(Object.assign({ stdout: [] }, JSON.parse(r.text))); status('ошибка разбора'); }
+};
+
+// ── файлы хранилища ──
+function renderFiles(list) {
+  const ul = $('files'); ul.innerHTML = '';
+  if (!list.length) { ul.innerHTML = '<li class="empty">пусто — программа может создать файл через file.запиши</li>'; return; }
+  for (const f of list) {
+    const li = document.createElement('li');
+    const name = document.createElement('span'); name.textContent = f; name.title = f; li.appendChild(name);
+    const mk = (t, fn, title) => { const b = document.createElement('button'); b.textContent = t; b.title = title; b.onclick = fn; li.appendChild(b); };
+    mk('открыть', async () => { const r = await call({ type: 'fs', op: 'read', path: f }); setCode(r.text); renderChips(null); $('savename').value = f; }, 'Загрузить в редактор');
+    mk('скачать', async () => {
+      const r = await call({ type: 'fs', op: 'read', path: f });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([r.text], { type: 'text/plain;charset=utf-8' }));
+      a.download = f.split('/').pop(); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }, 'Скачать файл');
+    mk('✕', async () => { const r = await call({ type: 'fs', op: 'delete', path: f }); renderFiles(r.files); }, 'Удалить');
+    ul.appendChild(li);
+  }
+}
+async function refreshFiles() { try { const r = await call({ type: 'fs', op: 'list' }); renderFiles(r.files); } catch (e) { $('files').innerHTML = '<li class="empty">' + esc(e.message || e) + '</li>'; } }
+$('refresh').onclick = refreshFiles;
+$('save').onclick = async () => {
+  const name = $('savename').value.trim(); if (!name) { $('savename').focus(); return; }
+  try { const r = await call({ type: 'fs', op: 'write', path: name, text: code.value }); renderFiles(r.files); status('сохранено: ' + name); }
+  catch (e) { status('не сохранено: ' + (e.message || e)); }
+};
+
+// ── загрузка ──
+function boot() {
+  const savedLang = load('vladx.lang'); if (savedLang && LANGS[savedLang]) $('lang').value = savedLang;
+  const saved = load('vladx.code.' + lang());
+  const first = (EXAMPLES[LANGS[lang()]] || [])[0];
+  setCode(saved || (first ? first.code : ''));
+  renderChips(saved ? null : first && first.name);
+
+  if (typeof WebAssembly !== 'object') {
+    return fatal('Этот браузер не поддерживает WebAssembly, а ядро VladX — это WebAssembly. Откройте страницу в современном браузере.');
+  }
+  if (location.protocol === 'file:') {
+    return fatal('Страница открыта как файл (<code>file://</code>). Браузер не даёт такой странице фоновый поток и хранилище, а ядро VladX работает именно там.<br>Запустите <code>vladx serve</code> в папке проекта и откройте <code>http://localhost:8000/site/playground.html</code>.');
+  }
+  try {
+    const blob = new Blob([$('worker-src').textContent], { type: 'text/javascript' });
+    worker = new Worker(URL.createObjectURL(blob));
+  } catch (e) {
+    return fatal('Не удалось запустить фоновый поток (worker): ' + esc(e.message || e) + '. Откройте страницу через <code>vladx serve</code>.');
+  }
+  worker.onmessage = ev => {
+    const m = ev.data;
+    if (m.type === 'stored') { renderFiles(m.files || []); return; }
+    const p = pending.get(m.id); if (!p) return; pending.delete(m.id);
+    if (m.type === 'error') p.reject(new Error(m.message)); else p.resolve(m);
+  };
+  worker.onerror = e => fatal('Ошибка фонового потока: ' + esc(e.message || e));
+  call({ type: 'boot', wasm: WASM_B64 }).then(r => {
+    ready = true; $('run').disabled = false; $('ast').disabled = false;
+    status('ядро готово' + (r.storageErr ? ' · хранилище недоступно' : ''));
+    refreshFiles(); run();
+  }).catch(e => fatal(
+    'WebAssembly запрещён на этой странице: ' + esc(e.message || e) + '.<br>Обычно это политика безопасности (CSP) без <code>\'wasm-unsafe-eval\'</code>, например во встроенном фрейме. Откройте страницу напрямую через <code>vladx serve</code>. Запасного движка на JavaScript нет намеренно: ядро у VladX одно.'));
+}
+boot();
+</script>
+</body>
+</html>

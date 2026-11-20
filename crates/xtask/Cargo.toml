@@ -1,4 +1,10 @@
 [package]
 name = "xtask"
+description = "Служебные проверки проекта: словарь ключевых слов"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+vladx-syntax = { path = "../vladx-syntax" }

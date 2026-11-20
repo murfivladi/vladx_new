@@ -692,6 +692,12 @@ dependencies = [
 [[package]]
 name = "vladx-wasm"
 version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "vladx-ast",
+ "vladx-runtime",
+ "vladx-syntax",
+]
 
 [[package]]
 name = "wasi"
@@ -823,6 +829,9 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 [[package]]
 name = "xtask"
 version = "0.1.0"
+dependencies = [
+ "vladx-syntax",
+]
 
 [[package]]
 name = "yoke"
