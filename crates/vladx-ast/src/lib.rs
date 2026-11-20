@@ -355,8 +355,10 @@ impl Program {
     }
 }
 
-/// JSON-дерево без `span` и без `lang` у корня — форма для сравнения
-/// эквивалентности трёх языков («один смысл — один AST»).
+/// JSON-дерево без `span`, без `lang` у корня и без исходного текста `value`
+/// у строк с интерполяцией (источник правды там — `parts`; в `value` остаются
+/// слова языка вроде `{это.имя}`) — форма для сравнения эквивалентности трёх
+/// языков («один смысл — один AST»).
 pub fn neutral_json(p: &Program) -> serde_json::Value {
     let mut v = serde_json::to_value(p).expect("AST всегда сериализуется");
     strip_spans(&mut v);
@@ -366,10 +368,31 @@ pub fn neutral_json(p: &Program) -> serde_json::Value {
     v
 }
 
+/// JSON-дерево без позиций `span` (остальное как есть).
+pub fn json_without_spans(p: &Program) -> serde_json::Value {
+    let mut v = serde_json::to_value(p).expect("AST всегда сериализуется");
+    strip_spans_only(&mut v);
+    v
+}
+
+fn strip_spans_only(v: &mut serde_json::Value) {
+    match v {
+        serde_json::Value::Object(m) => {
+            m.remove("span");
+            m.values_mut().for_each(strip_spans_only);
+        }
+        serde_json::Value::Array(a) => a.iter_mut().for_each(strip_spans_only),
+        _ => {}
+    }
+}
+
 fn strip_spans(v: &mut serde_json::Value) {
     match v {
         serde_json::Value::Object(m) => {
             m.remove("span");
+            if m.get("kind").and_then(|k| k.as_str()) == Some("StringLit") && m.get("parts").is_some_and(|x| !x.is_null()) {
+                m.remove("value");
+            }
             for (_, x) in m.iter_mut() {
                 strip_spans(x);
             }

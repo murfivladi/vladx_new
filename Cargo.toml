@@ -4,6 +4,7 @@ members = [
     "crates/vladx-ast",
     "crates/vladx-syntax",
     "crates/vladx-runtime",
+    "crates/vladx-hmn",
     "crates/vladx-wasm",
     "crates/vladx-cli",
     "crates/xtask",
@@ -20,6 +21,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 toml = { version = "0.8", default-features = false, features = ["parse"] }
 indexmap = "2"
 unicode-normalization = "0.1"
+sha2 = "0.10"
 
 [profile.release]
 opt-level = "s"

@@ -62,6 +62,9 @@ fn three_languages_give_identical_ast() {
   n станет n + 1
   прерви
 }
+пусть о будет { м: функция() {
+  скажи "я {это.м}"
+} }
 "#;
     let it = r#"
 sia имя = "мир"
@@ -82,6 +85,9 @@ finché n minore 10 {
   n diventa n + 1
   interrompi
 }
+sia о = { м: funzione() {
+  dì "я {questo.м}"
+} }
 "#;
     let scn = r#"
 fussi имя = "мир"
@@ -102,6 +108,9 @@ mentri n cchiù nicu 10 {
   n diventa n + 1
   ntirrumpi
 }
+fussi о = { м: funzioni() {
+  dici "я {chistu.м}"
+} }
 "#;
     let d = dict();
     let a = neutral_json(&parse(ru, Lang::Ru, &d).unwrap());
@@ -110,6 +119,7 @@ mentri n cchiù nicu 10 {
     assert_eq!(a, b, "ru ≠ it");
     assert_eq!(a, c, "ru ≠ scn");
     assert_eq!(serde_json::to_string(&a).unwrap(), serde_json::to_string(&c).unwrap());
+    assert!(serde_json::to_string(&a).unwrap().contains("SelfExpr"), "в тесте есть «это» внутри строки");
 }
 
 #[test]

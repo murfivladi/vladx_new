@@ -110,7 +110,7 @@ it = ["per ogni"]
 scn = ["pi ogni"]
 [op.support.iter]
 ru = ["из", "в"]
-it = ["di", "in"]
+it = ["in", "di"]
 scn = ["di", "nni"]
 
 [[op]]

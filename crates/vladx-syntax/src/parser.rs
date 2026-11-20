@@ -8,9 +8,13 @@
 use crate::keywords::{Dictionary, Lang};
 use crate::lexer::{RawPart, Tk, Token};
 use std::rc::Rc;
+use std::collections::HashMap;
 use vladx_ast::{Arg, BinOp, Block, Diagnostic, Entry, Expr, Param, Program, Span, Stmt, StringPart, UnOp};
 
 type PR<T> = Result<T, Diagnostic>;
+
+/// Позиция начала конструкции → строка её конца.
+pub type Ends = HashMap<(u32, u32), u32>;
 
 pub struct Parser<'a> {
     toks: Vec<Token>,
@@ -21,6 +25,10 @@ pub struct Parser<'a> {
     last_line: u32,
     /// Конец последнего прочитанного токена (строка, колонка после него).
     last_end: (u32, u32),
+    /// Для форматтера: начало инструкции → строка её конца.
+    pub stmt_ends: Ends,
+    /// Для форматтера: «{» блока → строка «}».
+    pub block_ends: Ends,
 }
 
 fn join(a: Option<Span>, b: Span) -> Option<Span> {
@@ -34,7 +42,16 @@ fn join(a: Option<Span>, b: Span) -> Option<Span> {
 
 impl<'a> Parser<'a> {
     pub fn new(toks: Vec<Token>, dict: &'a Dictionary, lang: Lang) -> Self {
-        Parser { toks, pos: 0, dict, lang, last_line: 1, last_end: (1, 1) }
+        Parser {
+            toks,
+            pos: 0,
+            dict,
+            lang,
+            last_line: 1,
+            last_end: (1, 1),
+            stmt_ends: HashMap::new(),
+            block_ends: HashMap::new(),
+        }
     }
 
     // ───────────── служебное ─────────────
@@ -87,6 +104,12 @@ impl<'a> Parser<'a> {
         Ok(Program::new(self.lang.code(), body))
     }
 
+    /// Разбор с позициями концов инструкций и блоков (для форматтера).
+    pub fn program_with_ends(mut self) -> PR<(Program, Ends, Ends)> {
+        let body = self.stmts(None)?;
+        Ok((Program::new(self.lang.code(), body), self.stmt_ends, self.block_ends))
+    }
+
     /// Список инструкций до `}` (если `open` задан) или до конца файла.
     fn stmts(&mut self, open: Option<&Token>) -> PR<Vec<Stmt>> {
         let mut out = vec![];
@@ -102,14 +125,19 @@ impl<'a> Parser<'a> {
                 break;
             }
             if self.at_sym("}") {
-                if open.is_some() {
-                    self.bump();
+                if let Some(o) = open {
+                    let close = self.bump();
+                    self.block_ends.insert((o.line, o.col), close.line);
                     break;
                 }
                 return Err(Diagnostic::error("E-SYNTAX-001", "Лишняя закрывающая скобка «}»", self.peek().span())
                     .with_hint("у этой скобки нет пары «{» — удалите её"));
             }
-            out.push(self.statement()?);
+            let st = self.statement()?;
+            if let Some(sp) = st.span() {
+                self.stmt_ends.insert((sp.line, sp.col), self.last_line);
+            }
+            out.push(st);
             if self.at_sym(";") {
                 self.bump();
                 continue;

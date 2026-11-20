@@ -10,7 +10,9 @@
 pub mod keywords;
 pub mod lexer;
 pub mod parser;
+pub mod printer;
 pub mod semantic;
+pub mod validate;
 
 pub use keywords::{Dictionary, Lang, Meaning};
 pub use vladx_ast::{Diagnostic, Program, Severity, Span};
@@ -22,6 +24,30 @@ pub const BUILTIN_KEYWORDS: &str = include_str!("../../../spec/keywords.toml");
 pub fn parse(src: &str, lang: Lang, dict: &Dictionary) -> Result<Program, Diagnostic> {
     let toks = lexer::lex(src, lang, dict)?;
     parser::Parser::new(toks, dict, lang).program()
+}
+
+/// Разбор с комментариями и концами конструкций (для форматтера).
+pub fn parse_with_trivia(src: &str, lang: Lang, dict: &Dictionary) -> Result<(Program, printer::Trivia), Diagnostic> {
+    let (toks, comments) = lexer::lex_with_comments(src, lang, dict)?;
+    let (p, stmt_ends, block_ends) = parser::Parser::new(toks, dict, lang).program_with_ends()?;
+    Ok((p, printer::Trivia { comments, stmt_ends, block_ends }))
+}
+
+/// Форматирование и перевод: исходник на `from` → канонический текст на `to`.
+/// Комментарии и пустые строки сохраняются. Ошибка перевода (например, у `scn`
+/// нет слова «больше или равно») возвращается как E-FMT-001.
+pub fn format_source(src: &str, from: Lang, to: Lang, dict: &Dictionary) -> Result<String, Diagnostic> {
+    let (p, trivia) = parse_with_trivia(src, from, dict)?;
+    let out = printer::print_program(&p, dict, to, Some(&trivia))
+        .map_err(|e| Diagnostic::error("E-FMT-001", format!("не удалось записать на {}: {e}", to.code()), Span::new(1, 1, 1)))?;
+    // Страховка: смысл не должен измениться.
+    let back = parse(&out, to, dict).map_err(|e| {
+        Diagnostic::error("E-FMT-001", format!("результат не разбирается: {}", e.message), Span::new(e.line, e.col, e.len))
+    })?;
+    if vladx_ast::neutral_json(&back) != vladx_ast::neutral_json(&p) {
+        return Err(Diagnostic::error("E-FMT-001", "форматирование изменило бы смысл программы", Span::new(1, 1, 1)));
+    }
+    Ok(out)
 }
 
 /// Разбор + статические проверки. Возвращает AST (если разбор удался)

@@ -100,12 +100,27 @@ impl<'a> Lx<'a> {
     }
 }
 
+/// Комментарий исходника (для форматтера): текст вместе с `//` или `#`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Comment {
+    pub line: u32,
+    pub text: String,
+    /// Комментарий занимает строку целиком (а не стоит после кода).
+    pub own_line: bool,
+}
+
 /// Разбор исходника в токены (последний — `Eof`).
 pub fn lex(src: &str, lang: Lang, dict: &Dictionary) -> Result<Vec<Token>, Diagnostic> {
+    lex_with_comments(src, lang, dict).map(|(t, _)| t)
+}
+
+/// То же, что [`lex`], плюс комментарии.
+pub fn lex_with_comments(src: &str, lang: Lang, dict: &Dictionary) -> Result<(Vec<Token>, Vec<Comment>), Diagnostic> {
     let src = src.strip_prefix('\u{feff}').unwrap_or(src);
     let normalized: String = src.nfc().collect();
     let mut lx = Lx { c: normalized.chars().collect(), i: 0, line: 1, col: 1, dict, lang };
     let mut raw: Vec<(Token, bool)> = vec![]; // (токен, это слово?)
+    let mut comments: Vec<Comment> = vec![];
 
     while let Some(ch) = lx.peek(0) {
         let (line, col) = (lx.line, lx.col);
@@ -114,12 +129,16 @@ pub fn lex(src: &str, lang: Lang, dict: &Dictionary) -> Result<Vec<Token>, Diagn
             continue;
         }
         if ch == '#' || (ch == '/' && lx.peek(1) == Some('/')) {
+            let start = lx.i;
             while let Some(c) = lx.peek(0) {
                 if c == '\n' {
                     break;
                 }
                 lx.adv();
             }
+            let text: String = lx.c[start..lx.i].iter().collect();
+            let own_line = !raw.last().is_some_and(|(t, _)| t.line == line);
+            comments.push(Comment { line, text: text.trim_end().to_string(), own_line });
             continue;
         }
         if ch.is_ascii_digit() {
@@ -230,7 +249,7 @@ pub fn lex(src: &str, lang: Lang, dict: &Dictionary) -> Result<Vec<Token>, Diagn
         }
     }
     out.push(Token { tk: Tk::Eof, text: String::new(), line: lx.line, col: lx.col, len: 1 });
-    Ok(out)
+    Ok((out, comments))
 }
 
 fn unknown_symbol(lx: &Lx, sym: &str, line: u32, col: u32) -> Diagnostic {

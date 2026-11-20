@@ -1,0 +1,16 @@
+[package]
+name = "vladx-hmn"
+description = "VladX .vlhmn: свободный текст → LLM → проверенный нейтральный AST"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+vladx-ast = { path = "../vladx-ast" }
+vladx-syntax = { path = "../vladx-syntax" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+vladx-runtime = { path = "../vladx-runtime" }

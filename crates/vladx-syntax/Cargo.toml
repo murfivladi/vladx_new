@@ -9,6 +9,4 @@ license.workspace = true
 vladx-ast = { path = "../vladx-ast" }
 toml = { workspace = true }
 unicode-normalization = { workspace = true }
-
-[dev-dependencies]
 serde_json = { workspace = true }
