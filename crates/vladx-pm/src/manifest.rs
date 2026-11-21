@@ -319,3 +319,55 @@ pub fn set_dependency(src: &str, dict: &Dictionary, lang: Lang, name: &str, rang
     s.push('\n');
     s
 }
+
+/// Поставить поле раздела «проект» (`id` — `version`, `name`, …), не трогая
+/// остальной текст. Нет поля — добавляется в конец раздела; нет раздела — в начало файла.
+pub fn set_project_field(src: &str, dict: &Dictionary, lang: Lang, id: &str, value: &str) -> String {
+    let line = format!("{} = {}", dict.manifest_word(lang, id), q(value));
+    let mut out: Vec<String> = vec![];
+    let mut in_proj = false;
+    let mut found_section = false;
+    let mut done = false;
+    let mut last: Option<usize> = None;
+    for l in src.lines() {
+        if let Some(h) = header(l) {
+            if in_proj && !done {
+                out.insert(last.map(|i| i + 1).unwrap_or(out.len()), line.clone());
+                done = true;
+            }
+            in_proj = dict.manifest_id(&h).as_deref() == Some("project");
+            found_section |= in_proj;
+            out.push(l.to_string());
+            if in_proj {
+                last = Some(out.len() - 1);
+            }
+            continue;
+        }
+        if in_proj && !done {
+            let t = l.trim();
+            if let Some(eq) = t.find('=').filter(|_| !t.starts_with('#')) {
+                if dict.manifest_id(&unquote_key(&t[..eq])).as_deref() == Some(id) {
+                    out.push(line.clone());
+                    done = true;
+                    continue;
+                }
+                out.push(l.to_string());
+                last = Some(out.len() - 1);
+                continue;
+            }
+        }
+        out.push(l.to_string());
+    }
+    if !done {
+        if in_proj {
+            out.insert(last.map(|i| i + 1).unwrap_or(out.len()), line);
+        } else if !found_section {
+            out.insert(0, format!("[{}]", dict.manifest_word(lang, "project")));
+            out.insert(1, line);
+            if out.len() > 2 {
+                out.insert(2, String::new());
+            }
+        }
+    }
+    out.join("\n") + "\n"
+}

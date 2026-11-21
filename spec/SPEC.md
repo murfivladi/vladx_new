@@ -212,6 +212,7 @@
 - **Публикация:** в пакет попадают `vladx.toml`, `.vlstd`, `.vlhmn`, `.md`, `.txt`, `.json`, `.csv`, `README*`, `LICENSE*`, кроме скрытых файлов и папки пакетов; до 1 МБ; каждый `.vlstd` должен разбираться. Версию нельзя опубликовать дважды (и после снятия).
 - **Снятие:** `vladpm unpublish имя@версия` — только в течение 72 часов; позже — `vladpm deprecate имя@диапазон "почему"`: установка продолжает работать, но предупреждает.
 - **Реестр:** `deploy/shared/vladpm-registry.php` на shared-хостинге (файлы, без базы данных) и сайт `vladpm.html`. Адрес выбирается так: `--registry` > `VLADPM_REGISTRY` > поле «реестр» в `vladx.toml` > `~/.vladpmrc` > `https://vladinc.ru/vladx`. Вход — логин и пароль, реестр выдаёт токен (в `~/.vladpmrc`; на сервере — только хеши паролей и токенов).
+- **Публикация из площадки:** панель «Пакеты» — регистрация и вход (токен — в браузере, по адресу реестра), кнопка «vladx.toml» создаёт манифест на языке проекта и точку входа, «Опубликовать» собирает пакет из хранилища страницы тем же кодом (`vx_pack`) и отправляет в реестр, «↑ версия» поднимает patch в `vladx.toml` без потери комментариев (`vx_manifest_edit`).
 - **Скрипты:** `vladpm run имя` выполняет команду из раздела «скрипты» в корне проекта; папка, где лежит `vladpm`, — первой в `PATH` (там же `vladx`).
 
 API реестра: `GET ?op=info|fetch|search|whoami`, `POST ?op=adduser|login|logout|publish|unpublish|deprecate` (JSON; токен — `Authorization: Bearer …` или `X-VladPM-Token`); ошибка — `{"ok": false, "error": "…"}`.
@@ -317,7 +318,7 @@ JSON по `spec/ast.schema.json` (draft 2020-12, `schema_version = 1`). Диск
 
 Импорты `env.*`: `vx_host_read(p,l)`, `vx_host_write(pp,pl,dp,dl)`, `vx_host_delete(p,l)`, `vx_host_list()`, `vx_host_get(p,l)` → `u64 = (ptr << 32) | len` на буфер `"ok\n…"`/`"err\n…"`, выделенный через `vx_alloc`; ядро освобождает его. `vx_host_ask(kind) → u32` (1 — файлы, 2 — сеть; 1 = разрешено).
 
-Пакеты (§5.9): `vx_pm(json, len) → 1/0` — `{"op": "install"|"add"|"remove"|"update", "args": […], "registry": "…", "lang": 0}` над хранилищем страницы (нет `vladx.toml` — создаётся на языке `lang`), результат `{"ok", "summary", "report"}` или `{"ok": false, "error"}`; `vx_manifest(src, len) → 1/0` — разбор `vladx.toml` для панели «Пакеты»; импорт `env.vx_host_http(url) → u64` — GET к реестру напрямую (действие IDE, а не сеть программы).
+Пакеты (§5.9): `vx_pm(json, len) → 1/0` — `{"op": "install"|"add"|"remove"|"update", "args": […], "registry": "…", "lang": 0}` над хранилищем страницы (нет `vladx.toml` — создаётся на языке `lang`), результат `{"ok", "summary", "report"}` или `{"ok": false, "error"}`; `vx_manifest(src, len) → 1/0` — разбор `vladx.toml` для панели «Пакеты»; `vx_pack(json) → 1/0` — сборка пакета из `{"files": {путь: текст}}` → `{bundle, meta, name, version, count, size}`; `vx_manifest_edit(json) → 1/0` — новый манифест (`{name, lang}`), поле (`{src, field, value}`) или следующая версия (`{src, bump: "patch"}`); импорт `env.vx_host_http(url) → u64` — GET к реестру напрямую (действие IDE, а не сеть программы).
 
 ## 11. `.vlhmn` — программа свободным текстом
 

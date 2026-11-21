@@ -165,7 +165,12 @@ kbd { font: 10px var(--mono); opacity: .7; margin-left: 5px; }
 .pm-list li .pm-dep { color: #d19a66; font-size: 11px; white-space: normal; }
 .pm-list li button { visibility: visible; flex: none; border: 1px solid var(--line); border-radius: 4px; padding: 1px 7px; color: var(--ink); }
 .pm-list li button:disabled { opacity: .5; }
-#pm-q, #pm-registry { width: 100%; box-sizing: border-box; }
+#pm-q, #pm-registry, .pm-login input { width: 100%; box-sizing: border-box; }
+.pm-login { display: grid; gap: 6px; margin: 0; }
+.pm-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.pm-row button { border: 1px solid var(--line); border-radius: 4px; padding: 3px 9px; color: var(--ink); }
+.pm-row button:disabled { opacity: .5; }
+#pm-publish { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 @media (max-width: 760px) {
   .side-tabs { display: flex; gap: 2px; padding: 6px 8px 0; }
   .side-tabs button { flex: 1; padding: 5px 0; font-size: 12px; color: var(--muted); border-radius: 6px; }
@@ -195,6 +200,7 @@ kbd { font: 10px var(--mono); opacity: .7; margin-left: 5px; }
   <select id="fmt" aria-label="Формат программы" title="Формат программы">
     <option value="vlstd">.vlstd — код</option>
     <option value="vlhmn">.vlhmn — текст для ИИ</option>
+    <option value="text" hidden>текст (vladx.toml, README)</option>
   </select>
   <span class="sep hide-narrow"></span>
   <button id="format" disabled title="Форматировать (Shift+Alt+F)">{ } Формат</button>
@@ -229,11 +235,29 @@ kbd { font: 10px var(--mono); opacity: .7; margin-left: 5px; }
       <ul id="pm-results" class="tree pm-list"></ul>
       <h3>Зависимости проекта</h3>
       <ul id="pm-installed" class="tree pm-list"><li class="empty">нет зависимостей</li></ul>
+      <h3>Публикация</h3>
+      <div class="settings">
+        <div class="note" id="pm-proj">нет vladx.toml</div>
+        <div class="pm-row">
+          <button id="pm-publish" title="Собрать пакет из хранилища и отправить в реестр (vladpm publish)">⤒ Опубликовать</button>
+          <button id="pm-bump" title="Поднять версию: 1.0.0 → 1.0.1">↑ версия</button>
+          <button id="pm-manifest" title="Открыть или создать vladx.toml">vladx.toml</button>
+        </div>
+      </div>
+      <h3>Учётная запись</h3>
+      <div class="settings">
+        <form id="pm-login" class="pm-login">
+          <input type="text" id="pm-user" placeholder="имя" autocomplete="username" spellcheck="false" aria-label="Имя в реестре">
+          <input type="password" id="pm-pass" placeholder="пароль (от 8 знаков)" autocomplete="current-password" aria-label="Пароль">
+          <div class="pm-row"><button type="submit" id="pm-signin">Войти</button><button type="button" id="pm-signup">Регистрация</button></div>
+        </form>
+        <div id="pm-me" class="note" hidden>вы вошли как <b id="pm-who"></b> · <a href="#" id="pm-logout">выйти</a></div>
+      </div>
       <h3>Реестр</h3>
       <div class="settings">
         <div class="field"><span>Адрес реестра</span><input type="text" id="pm-registry" spellcheck="false" placeholder="https://vladinc.ru/vladx"></div>
         <div class="note" id="pm-info">ищу реестр…</div>
-        <div class="note">Пакеты ставятся в хранилище страницы, в папку <code id="pm-dir">пакеты/</code>; подключение — <code>из "имя" возьми …</code>. Опубликовать свой пакет — командой <code>vladpm publish</code>.</div>
+        <div class="note">Пакеты ставятся в хранилище страницы, в папку <code id="pm-dir">пакеты/</code>; подключение — <code>из "имя" возьми …</code>. Публикация берёт файлы хранилища: <code>vladx.toml</code>, <code>.vlstd</code>, <code>README.md</code> (без папки пакетов); то же делает <code>vladpm publish</code>.</div>
       </div>
     </section>
     <section id="view-settings" hidden>
@@ -758,7 +782,13 @@ $('wskey').addEventListener('change', () => {
 
 // ════════════ документы и вкладки ════════════
 let docs = [], cur = null, docSeq = 0;
-function docLabel(d) { return d.name + '.' + d.fmt; }
+function docLabel(d) { return d.fmt === 'text' ? d.name : d.name + '.' + d.fmt; }
+// Файл хранилища во вкладке: .vlstd/.vlhmn — программа, остальное (vladx.toml, README.md) — текст.
+function docFromStorage(path, text) {
+  const m = path.match(/^(.*?)(?:\.(vlstd|vlhmn))?$/);
+  const isText = !m[2] && /\.[^/.]+$/.test(path);
+  return newDoc({ name: isText ? path : m[1], fmt: m[2] || (isText ? 'text' : 'vlstd'), lang: lang(), code: text, source: 'storage', path, saved: text });
+}
 function newDoc(o) { return Object.assign({ id: ++docSeq, name: 'без_имени', fmt: 'vlstd', lang: lang(), code: '', source: 'new', path: null, dirty: false, saved: '' }, o); }
 function saveDocs() {
   store('vladx.docs', JSON.stringify(docs.map(d => ({ name: d.name, fmt: d.fmt, lang: d.lang, code: d.code, source: d.source, path: d.path, dirty: d.dirty, saved: d.saved }))));
@@ -911,9 +941,7 @@ async function openAt(path, line, col) {
   let d = docs.find(x => x.path === path);
   if (!d) {
     try {
-      const text = await storage.read(path);
-      const m = path.match(/^(.*?)(?:\.(vlstd|vlhmn))?$/);
-      d = newDoc({ name: m[1], fmt: m[2] || 'vlstd', lang: lang(), code: text, source: 'storage', path, saved: text });
+      d = docFromStorage(path, await storage.read(path));
     } catch (e) { status('не открыт: ' + path); return; }
   }
   openDoc(d);
@@ -995,9 +1023,7 @@ function renderFileTree() {
     li.append(ico, name, dl, del);
     li.onclick = async () => {
       const open = docs.find(d => d.path === f); if (open) { openDoc(open); closeSide(); return; }
-      const text = await storage.read(f);
-      const m = f.match(/^(.*?)(?:\.(vlstd|vlhmn))?$/);
-      openDoc(newDoc({ name: m[1], fmt: m[2] || 'vlstd', lang: lang(), code: text, source: 'storage', path: f, saved: text }));
+      openDoc(docFromStorage(f, await storage.read(f)));
       closeSide();
     };
     ul.appendChild(li);
@@ -1106,6 +1132,7 @@ function pmSetRegistry(base) {
   pm.base = base;
   pm.url = pmEndpoint(base);
   pm.site = pm.url.replace(/vladpm-registry\.php$/, 'vladpm.html');
+  pmShowAccount();
   $('pm-registry').value = base;
   fetch(pm.url, { cache: 'no-store' }).then(r => r.json()).then(j => {
     $('pm-info').innerHTML = 'Реестр: ' + esc(base) + ' · пакетов: ' + (j.packages | 0) + ' · <a href="' + esc(pm.site) + '" target="_blank" rel="noopener">сайт реестра</a>';
@@ -1120,14 +1147,16 @@ async function pmRefresh() {
   pm.deps = {}; pm.lock = {};
   let manifest = null;
   try { manifest = await storage.read('vladx.toml'); } catch (e) {}
+  pm.manifest = manifest; pm.proj = null;
   if (manifest != null && core) {
     const r = JSON.parse(coreCall('vx_manifest', manifest).out);
-    if (r.ok) { pm.deps = r.dependencies || {}; pm.dir = r.modules_dir || 'пакеты'; }
-    else { $('pm-installed').innerHTML = '<li class="empty">vladx.toml: ' + esc(r.error) + '</li>'; return; }
+    if (r.ok) { pm.deps = r.dependencies || {}; pm.dir = r.modules_dir || 'пакеты'; pm.proj = r; }
+    else { $('pm-installed').innerHTML = '<li class="empty">vladx.toml: ' + esc(r.error) + '</li>'; $('pm-proj').textContent = 'vladx.toml с ошибкой: ' + r.error; return; }
   } else {
     pm.dir = ['пакеты', 'pacchetti', 'pacchetti'][lang()];
   }
   $('pm-dir').textContent = pm.dir + '/';
+  pmShowProject();
   try { pm.lock = (JSON.parse(await storage.read('vladx.lock')).packages) || {}; } catch (e) {}
   const ul = $('pm-installed'); ul.innerHTML = '';
   const names = Object.keys(pm.deps);
@@ -1156,6 +1185,143 @@ async function pmOpen() {
   await pmRefresh();
   pmSearch();
 }
+// ── публикация из IDE: учётная запись, сборка пакета в WASM, отправка в реестр ──
+function pmTokens() { try { return JSON.parse(load('vladx.pmtokens') || '{}'); } catch (e) { return {}; } }
+function pmAccount() { return pmTokens()[pm.url] || null; }
+function pmShowAccount() {
+  const a = pmAccount();
+  $('pm-login').hidden = !!a; $('pm-me').hidden = !a;
+  if (a) $('pm-who').textContent = a.user;
+}
+function pmShowProject() {
+  const p = pm.proj;
+  $('pm-proj').innerHTML = p
+    ? 'Пакет: <b>' + esc(p.name || '(без имени)') + '</b> ' + esc(p.version || '(без версии)') + (p.name && pm.site ? ' · <a href="' + esc(pm.site + '#/' + p.name) + '" target="_blank" rel="noopener">в реестре</a>' : '')
+    : 'В хранилище нет vladx.toml — нажмите «vladx.toml», чтобы создать пакет.';
+  $('pm-bump').disabled = !p; $('pm-publish').disabled = !p;
+}
+async function pmPost(op, body) {
+  const a = pmAccount();
+  const headers = { 'Content-Type': 'application/json' };
+  if (a) { headers.Authorization = 'Bearer ' + a.token; headers['X-VladPM-Token'] = a.token; }
+  let j;
+  try { j = await (await fetch(pm.url + '?op=' + op, { method: 'POST', headers, body: JSON.stringify(body) })).json(); }
+  catch (e) { throw new Error('реестр не ответил: ' + pm.url); }
+  if (j.error) throw new Error(j.error);
+  return j;
+}
+function pmLog(lines, cls) {
+  showPanel('terminal');
+  for (const l of [].concat(lines)) $('output').appendChild(termLine(l, cls));
+  $('terminal').scrollTop = $('terminal').scrollHeight;
+}
+async function pmAuth(op) {
+  const user = $('pm-user').value.trim(), password = $('pm-pass').value;
+  if (!user || !password) { status('введите имя и пароль'); return; }
+  try {
+    const j = await pmPost(op, { user, password });
+    const t = pmTokens(); t[pm.url] = { user: j.user, token: j.token }; store('vladx.pmtokens', JSON.stringify(t));
+    $('pm-pass').value = '';
+    status((op === 'adduser' ? 'зарегистрирован: ' : 'вход: ') + j.user);
+  } catch (e) { status(e.message); pmLog('vladpm ' + (op === 'adduser' ? 'adduser' : 'login') + ': ' + e.message, 'err'); }
+  pmShowAccount();
+}
+$('pm-login').addEventListener('submit', e => { e.preventDefault(); pmAuth('login'); });
+$('pm-signup').onclick = () => pmAuth('adduser');
+$('pm-logout').onclick = async e => {
+  e.preventDefault();
+  try { await pmPost('logout', {}); } catch (x) {}
+  const t = pmTokens(); delete t[pm.url]; store('vladx.pmtokens', JSON.stringify(t));
+  pmShowAccount(); status('выход из реестра');
+};
+// Файлы, которые могут попасть в пакет (окончательно решает vladx-pm в WASM).
+function pmCandidate(p) {
+  const parts = p.split('/');
+  if (parts.some(x => x.startsWith('.'))) return false;
+  if (parts.length > 1 && ['пакеты', 'pacchetti', 'vladx_modules', 'vladx-files'].includes(parts[0])) return false;
+  const n = parts[parts.length - 1];
+  return n === 'vladx.toml' || /^(readme|licen[cs]e)/i.test(n) || /\.(vlstd|vlhmn|md|txt|json|csv)$/.test(n);
+}
+// Изменённый на диске vladx.toml — и в открытой вкладке.
+function pmSyncTab(path, text) {
+  const d = docs.find(x => x.path === path);
+  if (!d || d.dirty) return;
+  d.code = text; d.saved = text;
+  if (d === cur) { code.value = text; refreshEditor(true); }
+  saveDocs();
+}
+async function pmEditManifest(req) {
+  const r = JSON.parse(coreCall('vx_manifest_edit', JSON.stringify(req)).out);
+  if (!r.ok) throw new Error(r.error);
+  await storage.write('vladx.toml', r.src);
+  pmSyncTab('vladx.toml', r.src);
+  return r;
+}
+$('pm-manifest').onclick = async () => {
+  await saveDirtyModules();
+  let src = null;
+  try { src = await storage.read('vladx.toml'); } catch (e) {}
+  if (src == null) {
+    const name = prompt('Имя пакета (строчные буквы; своя область — @имя/пакет):', '');
+    if (!name) return;
+    try {
+      await pmEditManifest({ name: name.trim(), lang: lang() });
+      // точка входа пакета на языке проекта, если её ещё нет
+      const main = ['главная.vlstd', 'principale.vlstd', 'principali.vlstd'][lang()];
+      const files = await storage.list();
+      if (!files.includes(main)) {
+        const it = 'funzione saluta(chi) {\n  rendi "Ciao, " + chi + "!"\n}\n';
+        const sample = [
+          '// Точка входа пакета: всё, что объявлено здесь, можно взять через «из … возьми».\nфункция привет(кто) {\n  верни "Привет, " + кто + "!"\n}\n',
+          '// Punto di ingresso del pacchetto.\n' + it,
+          lang() === 2 ? coreCall('vx_format', it, 1, 2).out : it,
+        ][lang()];
+        await storage.write(main, sample);
+      }
+    } catch (e) { status('vladx.toml: ' + e.message); return; }
+    await refreshFiles();
+  }
+  await openAt('vladx.toml');
+  pmRefresh();
+};
+$('pm-bump').onclick = async () => {
+  await saveDirtyModules();
+  try {
+    const r = await pmEditManifest({ src: await storage.read('vladx.toml'), lang: lang(), bump: 'patch' });
+    status('версия ' + r.version);
+  } catch (e) { status('версия: ' + e.message); }
+  pmRefresh();
+};
+$('pm-publish').onclick = async () => {
+  if (!ready || pm.busy) return;
+  if (!pmAccount()) { status('сначала войдите в реестр'); $('pm-user').focus(); return; }
+  pm.busy = true; $('pm-publish').disabled = true;
+  pmLog('$ vladpm publish', 'cmd');
+  status('vladpm publish…');
+  try {
+    await saveDirtyModules();
+    const files = {};
+    for (const f of (await storage.list()).filter(pmCandidate)) files[f] = await storage.read(f);
+    const packed = JSON.parse(coreCall('vx_pack', JSON.stringify({ files })).out);
+    if (!packed.ok) throw new Error(packed.error);
+    const j = await pmPost('publish', { bundle: packed.bundle, meta: packed.meta });
+    const kb = Math.max(1, Math.ceil(packed.size / 1024));
+    pmLog('+ ' + packed.name + '@' + packed.version + ' (' + packed.count + ' файл., ' + kb + ' КБ) → ' + pm.base);
+    pmLog('  ' + Object.keys(packed.bundle.files).join(', '), 'cmd');
+    if (j.page) { const a = document.createElement('a'); a.href = j.page; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'страница пакета: ' + j.page; const d = termLine(''); d.appendChild(a); $('output').appendChild(d); }
+    status('опубликовано: ' + packed.name + '@' + packed.version);
+  } catch (e) {
+    const msg = String(e.message || e);
+    pmLog(msg, 'err');
+    if (/уже публиковался/.test(msg)) pmLog('подсказка: нажмите «↑ версия» и опубликуйте снова', 'warn');
+    if (/нужен вход|токен недействителен/.test(msg)) { const t = pmTokens(); delete t[pm.url]; store('vladx.pmtokens', JSON.stringify(t)); pmShowAccount(); }
+    status('публикация не удалась');
+  } finally {
+    pm.busy = false; $('pm-publish').disabled = !pm.proj;
+    pmSetRegistry(pm.base); pmShowProject(); pmSearch();
+  }
+};
+
 let pmTimer = 0;
 async function pmSearch() {
   const q = $('pm-q').value.trim(), ul = $('pm-results');
@@ -1319,6 +1485,7 @@ async function saveDirtyModules() {
 }
 async function run(force) {
   if (!ready || running) return;
+  if (fmt() === 'text') { status('это не программа: откройте файл .vlstd'); return; }
   await saveDirtyModules();
   $('askpanel').hidden = true; $('lowconf').hidden = true; $('term-ask').hidden = true;
   showPanel('terminal');

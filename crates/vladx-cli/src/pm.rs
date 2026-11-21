@@ -530,16 +530,7 @@ pub fn main_from(argv: Vec<String>) -> Result<bool, String> {
             let mut files = vec![];
             walk(&root, &root, &mut files, &mdirs)?;
             let (b, m) = vladx_pm::bundle::pack(files, &c.dict)?;
-            let readme = b.files.iter().find(|(k, _)| k.to_uppercase().starts_with("README")).map(|(_, v)| v.clone()).unwrap_or_default();
-            let meta = json!({
-                "dependencies": m.dependencies,
-                "description": m.description,
-                "lang": m.lang.unwrap_or(Lang::Ru).code(),
-                "main": m.main,
-                "license": m.license,
-                "author": m.author,
-                "readme": readme,
-            });
+            let meta = vladx_pm::bundle::publish_meta(&m, &b);
             let n = b.files.len();
             let kb = b.size().div_ceil(1024);
             let v = r.post("publish", json!({ "bundle": b, "meta": meta }))?;

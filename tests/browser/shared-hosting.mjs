@@ -153,6 +153,44 @@ try {
   check('11f', '× убирает пакет из папки и из vladx.toml', !gone.files.some(f => f.startsWith('пакеты/@тест')) && (await page.innerText('#output')).includes('- @тест/привет@1.0.0'), JSON.stringify(gone.files));
   check('11g', 'в консоли по-прежнему нет ошибок', errors.length === 0, errors.join('\n'));
 
+  // ── публикация прямо из IDE: регистрация, vladx.toml, «Опубликовать», «↑ версия» ──
+  const fsOp = body => php_('vladx-fs.php', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-VladX-Workspace': ws }, body: JSON.stringify(body) });
+  for (const f of ['vladx.toml', 'vladx.lock']) await fsOp({ op: 'delete', path: f });
+  await page.click('#act-packages');
+  await page.fill('#pm-user', 'автор'); await page.fill('#pm-pass', 'пароль-автора');
+  await page.click('#pm-signup');
+  await page.waitForSelector('#pm-me:not([hidden])', { timeout: 10000 }).catch(() => {});
+  check('12a', 'регистрация в реестре прямо из панели', (await page.innerText('#pm-who')) === 'автор', await page.innerText('#status'));
+  page.once('dialog', d => d.accept('@автор/из-ide'));
+  await page.click('#pm-manifest');
+  await page.waitForFunction(() => /@автор\/из-ide/.test(document.getElementById('pm-proj').textContent), null, { timeout: 10000 }).catch(() => {});
+  const toml = await fsOp({ op: 'read', path: 'vladx.toml' }), mainF = await fsOp({ op: 'read', path: 'главная.vlstd' });
+  check('12b', '«vladx.toml» создаёт манифест на языке проекта и точку входа, открывает их', toml.ok && toml.data.includes('[проект]') && toml.data.includes('имя = "@автор/из-ide"') && mainF.ok && (await page.inputValue('#code')).includes('[проект]'), JSON.stringify([toml, mainF]));
+  const publish = async () => {
+    await page.click('#pm-publish');
+    await page.waitForFunction(() => /опубликовано|не удалась/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
+    const st = await page.innerText('#status');
+    await page.evaluate(() => { document.getElementById('status').textContent = ''; });
+    return st;
+  };
+  let st = await publish();
+  let info = await php_('vladpm-registry.php?op=info&name=' + encodeURIComponent('@автор/из-ide'));
+  check('12c', '«Опубликовать» собирает пакет из хранилища и отправляет в реестр', st.includes('опубликовано') && info.latest === '1.0.0' && (await page.innerText('#output')).includes('+ @автор/из-ide@1.0.0'), st + '\n' + JSON.stringify(info));
+  st = await publish();
+  o = await page.innerText('#output');
+  check('12d', 'повтор той же версии — ошибка реестра и подсказка «↑ версия»', st.includes('не удалась') && o.includes('уже публиковался') && o.includes('↑ версия'), o);
+  await page.click('#pm-bump');
+  await page.waitForFunction(() => /версия 1\.0\.1/.test(document.getElementById('status').textContent), null, { timeout: 10000 }).catch(() => {});
+  check('12e', '«↑ версия» правит vladx.toml и открытую вкладку', (await fsOp({ op: 'read', path: 'vladx.toml' })).data.includes('версия = "1.0.1"') && (await page.inputValue('#code')).includes('1.0.1'));
+  st = await publish();
+  info = await php_('vladpm-registry.php?op=info&name=' + encodeURIComponent('@автор/из-ide'));
+  check('12f', 'новая версия опубликована', st.includes('опубликовано') && Object.keys(info.versions).length === 2 && info.latest === '1.0.1', JSON.stringify(info.versions));
+  const bundle = await php_('vladpm-registry.php?op=fetch&name=' + encodeURIComponent('@автор/из-ide') + '&version=1.0.1');
+  check('12g', 'в пакет попали vladx.toml и код, но не папка пакетов; список файлов показан в терминале', bundle.files['vladx.toml'] && bundle.files['главная.vlstd'] && !Object.keys(bundle.files).some(f => f.startsWith('пакеты/')) && (await page.innerText('#output')).includes('vladx.toml, главная.vlstd'), Object.keys(bundle.files).join(', '));
+  // 409 на повторную версию браузер сам пишет в консоль — это ожидаемый ответ реестра
+  const real = errors.filter(e => !/status of 409/.test(e));
+  check('12h', 'в консоли нет ошибок после публикации (кроме ожидаемого 409)', real.length === 0, real.join('\n'));
+
   // Запасной режим: playground.html напрямую, без заголовков изоляции → «спроси» через повтор.
   const p2 = await (await browser.newContext()).newPage();
   await p2.goto(`http://127.0.0.1:${port}/playground.html`);

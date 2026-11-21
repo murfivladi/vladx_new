@@ -170,3 +170,22 @@ fn pack_validates() {
     let ok = bundle::pack(vec![("vladx.toml".into(), toml), ("главная.vlstd".into(), "скажи 1".into())], &d()).unwrap();
     ok.0.verify().unwrap();
 }
+
+#[test]
+fn bump_and_set_field() {
+    assert_eq!(semver::bump("1.2.3", "patch").unwrap(), "1.2.4");
+    assert_eq!(semver::bump("1.2.3", "minor").unwrap(), "1.3.0");
+    assert_eq!(semver::bump("1.2.3", "major").unwrap(), "2.0.0");
+    assert_eq!(semver::bump("1.3.0-бета.1", "patch").unwrap(), "1.3.0");
+    let src = "# мой пакет\n[проект]\nимя = \"x\"\nверсия = \"1.0.0\" # сюда\n\n[зависимости]\n";
+    let s = manifest::set_project_field(src, &d(), Lang::Ru, "version", "1.0.1");
+    assert!(s.contains("# мой пакет") && s.contains("версия = \"1.0.1\""), "{s}");
+    assert_eq!(manifest::parse(&s, &d()).unwrap().version.as_deref(), Some("1.0.1"));
+    let s = manifest::set_project_field(src, &d(), Lang::Ru, "description", "Строки");
+    let m = manifest::parse(&s, &d()).unwrap();
+    assert_eq!((m.description.as_deref(), m.version.as_deref()), (Some("Строки"), Some("1.0.0")));
+    let s = manifest::set_project_field("[dipendenze]\n", &d(), Lang::It, "name", "io");
+    assert!(s.starts_with("[progetto]\nnome = \"io\"\n"), "{s}");
+    let s = manifest::set_project_field("[progetto]\nnome = \"io\"\n[dipendenze]\na = \"1\"\n", &d(), Lang::It, "version", "2.0.0");
+    assert_eq!(manifest::parse(&s, &d()).unwrap().version.as_deref(), Some("2.0.0"), "{s}");
+}

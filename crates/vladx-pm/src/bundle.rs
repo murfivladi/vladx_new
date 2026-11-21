@@ -133,3 +133,17 @@ pub fn default_main(_dict: &Dictionary, lang: Lang) -> String {
         Lang::Scn => "principali.vlstd".into(),
     }
 }
+
+/// Сведения о версии для реестра (то же отправляют `vladpm publish` и площадка).
+pub fn publish_meta(m: &crate::Manifest, b: &Bundle) -> serde_json::Value {
+    let readme = b.files.iter().find(|(k, _)| k.to_uppercase().starts_with("README")).map(|(_, v)| v.clone()).unwrap_or_default();
+    serde_json::json!({
+        "dependencies": m.dependencies,
+        "description": m.description,
+        "lang": m.lang.unwrap_or(Lang::Ru).code(),
+        "main": m.main,
+        "license": m.license,
+        "author": m.author,
+        "readme": readme,
+    })
+}

@@ -597,3 +597,86 @@ pub unsafe extern "C" fn vx_manifest(ptr: *const u8, len: usize) -> u32 {
     });
     ok as u32
 }
+
+/// Собрать пакет для публикации из файлов хранилища:
+/// `{"files": {"путь": "текст", …}}` → `{"ok", "bundle", "meta", "name", "version", "count", "size"}`
+/// или `{"ok": false, "error"}`. Тот же код, что у `vladpm publish`; отправляет страница.
+///
+/// # Safety
+/// `ptr..ptr+len` — валидный буфер UTF-8.
+#[no_mangle]
+pub unsafe extern "C" fn vx_pack(ptr: *const u8, len: usize) -> u32 {
+    let req: serde_json::Value = serde_json::from_str(&read_str(ptr, len)).unwrap_or_default();
+    let files: Vec<(String, String)> = req
+        .get("files")
+        .and_then(|f| f.as_object())
+        .map(|o| o.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))).collect())
+        .unwrap_or_default();
+    let dict = ST.with(|st| st.borrow().dict.clone());
+    let r = vladx_pm::bundle::pack(files, &dict);
+    let ok = r.is_ok();
+    set_result(match r {
+        Ok((b, m)) => serde_json::json!({
+            "ok": true,
+            "name": b.name,
+            "version": b.version,
+            "count": b.files.len(),
+            "size": b.size(),
+            "meta": vladx_pm::bundle::publish_meta(&m, &b),
+            "bundle": b,
+        })
+        .to_string(),
+        Err(e) => serde_json::json!({ "ok": false, "error": e }).to_string(),
+    });
+    ok as u32
+}
+
+/// Правка `vladx.toml` без потери комментариев: `{"src", "lang": 0, "field": "version", "value": "1.0.1"}`
+/// или `{"src", "lang", "bump": "patch"|"minor"|"major"}` → `{"ok", "src", "version"?}`.
+/// Нет `src` — новый манифест (`{"name": …}` обязательно).
+///
+/// # Safety
+/// `ptr..ptr+len` — валидный буфер UTF-8.
+#[no_mangle]
+pub unsafe extern "C" fn vx_manifest_edit(ptr: *const u8, len: usize) -> u32 {
+    let req: serde_json::Value = serde_json::from_str(&read_str(ptr, len)).unwrap_or_default();
+    let s = |k: &str| req.get(k).and_then(|v| v.as_str()).map(|x| x.to_string());
+    let lang = Lang::from_index(req.get("lang").and_then(|v| v.as_u64()).unwrap_or(0) as u32).unwrap_or(Lang::Ru);
+    let dict = ST.with(|st| st.borrow().dict.clone());
+    let r = (|| -> Result<serde_json::Value, String> {
+        let src = match s("src") {
+            Some(src) => src,
+            None => {
+                let name = s("name").ok_or("нужно имя пакета")?;
+                vladx_pm::manifest::valid_name(&name)?;
+                let m = vladx_pm::Manifest {
+                    name: Some(name),
+                    version: Some("1.0.0".into()),
+                    lang: Some(lang),
+                    main: Some(vladx_pm::bundle::default_main(&dict, lang)),
+                    ..vladx_pm::Manifest::default()
+                };
+                return Ok(serde_json::json!({ "ok": true, "src": vladx_pm::manifest::render(&m, lang, &dict) }));
+            }
+        };
+        let m = vladx_pm::manifest::parse(&src, &dict)?;
+        let lang = m.lang.unwrap_or(lang);
+        if let Some(part) = s("bump") {
+            let cur = m.version.clone().unwrap_or_else(|| "0.0.0".into());
+            let next = vladx_pm::semver::bump(&cur, &part)?;
+            let out = vladx_pm::manifest::set_project_field(&src, &dict, lang, "version", &next);
+            return Ok(serde_json::json!({ "ok": true, "src": out, "version": next }));
+        }
+        let field = s("field").ok_or("нужно поле")?;
+        let value = s("value").unwrap_or_default();
+        let out = vladx_pm::manifest::set_project_field(&src, &dict, lang, &field, &value);
+        vladx_pm::manifest::parse(&out, &dict)?;
+        Ok(serde_json::json!({ "ok": true, "src": out }))
+    })();
+    let ok = r.is_ok();
+    set_result(match r {
+        Ok(v) => v.to_string(),
+        Err(e) => serde_json::json!({ "ok": false, "error": e }).to_string(),
+    });
+    ok as u32
+}

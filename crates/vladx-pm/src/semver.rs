@@ -258,3 +258,16 @@ impl Range {
             .map(|(_, s)| s.to_string())
     }
 }
+
+/// Следующая версия: `patch` 1.2.3 → 1.2.4, `minor` → 1.3.0, `major` → 2.0.0
+/// (предрелиз 1.3.0-бета.1 при `patch` становится 1.3.0).
+pub fn bump(v: &str, part: &str) -> Result<String, String> {
+    let x = Version::parse(v)?;
+    let n = match part {
+        "major" => Version { major: x.major + 1, minor: 0, patch: 0, pre: vec![] },
+        "minor" => Version { major: x.major, minor: x.minor + 1, patch: 0, pre: vec![] },
+        _ if !x.pre.is_empty() => Version { pre: vec![], ..x },
+        _ => Version { patch: x.patch + 1, ..x },
+    };
+    Ok(n.to_string())
+}
