@@ -60,6 +60,10 @@ else
   echo "       (перевод .vlhmn через ИИ пропущен: нет POLZA_API_KEY; конвейер проверен тестами vladx-hmn)"
 fi
 
+if command -v php >/dev/null; then
+  php -l deploy/shared/vladx-llm.php >/dev/null && ok "deploy/shared/vladx-llm.php: синтаксис PHP" || bad "vladx-llm.php: синтаксис PHP"
+fi
+
 echo "== негативные случаи"
 for pair in "01-order:E-ORDER-001" "02-unclosed-block:E-SYNTAX-003" "03-mutate-const:E-NAME-002" "04-unknown-word:E-SYNTAX-016"; do
   f="tests/negative/${pair%%:*}.vlstd"; want="${pair##*:}"

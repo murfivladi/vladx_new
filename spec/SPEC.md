@@ -229,7 +229,7 @@ JSON по `spec/ast.schema.json` (draft 2020-12, `schema_version = 1`). Диск
 
 Сборка: `cargo build -p vladx-wasm --target wasm32-unknown-unknown --release`, без wasm-bindgen; стек 32 МБ (`.cargo/config.toml`).
 
-Дополнительно: `vx_run_ast(json, len, maxSteps) → 1/0` — проверить (как в §11) и исполнить готовый AST, в результате есть поле `vlstd`; `vx_format(src, len, from, to) → 1/0` — текст на другом языке или `{ok:false, diagnostics}`.
+Дополнительно: `vx_translate(text, len, lang) → 1/0` — перевод `.vlhmn` (§11), `vx_set_llm(model)` — модель сервера ИИ для ключа кэша, импорт `env.vx_host_llm(json) → u64` — диалог серверу ИИ; `vx_run_ast(json, len, maxSteps) → 1/0` — проверить (как в §11) и исполнить готовый AST, в результате есть поле `vlstd`; `vx_format(src, len, from, to) → 1/0` — текст на другом языке или `{ok:false, diagnostics}`.
 
 Экспорты: `vx_alloc(len)`, `vx_free(ptr, len)`, `vx_run(src, len, lang, maxSteps) → 1/0`, `vx_parse(src, len, lang) → 1/0`, `vx_result_ptr()`, `vx_result_len()`, `vx_set_input(ptr, len)`, `vx_set_time(ms: f64)`, `vx_set_permissions(bits)` (бит 0 — файлы, бит 1 — сеть), `vx_set_keywords(ptr, len) → 1/0`, `vx_version()`, `vx_reset_host()`. `lang`: 0 — ru, 1 — it, 2 — scn; `maxSteps = 0` — 3 000 000.
 
@@ -258,7 +258,15 @@ JSON по `spec/ast.schema.json` (draft 2020-12, `schema_version = 1`). Диск
 
 Исполняется проверенный AST; ошибки исполнения указывают на строки показанного перевода.
 
-**Провайдер — Polza.ai** (OpenAI-совместимый `POST https://polza.ai/api/v1/chat/completions`). Ключ: `POLZA_API_KEY` (или `POLZA`, `VLADX_LLM_KEY`); модель: `VLADX_LLM_MODEL`, по умолчанию `anthropic/claude-haiku-5.5` — дешёвая модель для разбора (§15.1 ТЗ); `VLADX_LLM_URL`, `VLADX_LLM_EFFORT` (по умолчанию `low`). В браузере ключа нет: площадка отправляет текст в `POST /hmn` у `vladx serve`, а полученный AST ядро в WASM ещё раз проверяет (`vx_run_ast`) и исполняет.
+**Где ключ.** Ключ Polza.ai и модель хранятся на сервере, клиент присылает только диалог перевода. Протокол сервера ИИ один для всех:
+
+- `GET` → `{"available": bool, "model": "...", "reason"?}` (ключ не раскрывается);
+- `POST {"messages": [{"role", "content"}, ...]}` → `{"ok": true, "content": "<ответ модели>", "model"}` или `{"ok": false, "error"}`.
+
+Его реализуют `deploy/shared/vladx-llm.php` (shared-хостинг: модель и лимиты в `config.php`, только диалоги перевода VladX, лимиты по IP и в сутки, проверка Origin, необязательный токен) и `vladx serve` (`/llm` и любой `…/vladx-llm.php`). Промпт, проверку ответа, повтор и кэш делает ядро у клиента:
+
+- **браузер** — WASM-экспорт `vx_translate`; запрос к модели идёт через импорт `vx_host_llm`, а worker пересылает его синхронным XHR на `vladx-llm.php` рядом со страницей (или на адрес из поля «ИИ»);
+- **CLI** — `VLADX_LLM_PROXY=https://сайт/vladx-llm.php` (+ `VLADX_LLM_PROXY_TOKEN`), ключ на компьютере не нужен. Без посредника CLI может ходить в Polza напрямую: ключ `POLZA_API_KEY` (или `POLZA`, `VLADX_LLM_KEY`), модель `VLADX_LLM_MODEL` (по умолчанию `anthropic/claude-haiku-5.5` — дешёвая модель для разбора, §15.1 ТЗ).
 
 **Оценка** (критерий фазы 5: ≥ 90 % фраз → корректная программа, не больше одного повтора): `vladx hmn-eval spec/hmn-eval/ru` — для каждой фразы `NN.vlhmn` сравнивает вывод программы с `NN.out` (ввод для `спроси` — `NN.in`).
 

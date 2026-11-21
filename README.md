@@ -39,6 +39,7 @@ dì "ciao, {nome}"
 | macOS Intel | `vladx-x86_64-apple-darwin.tar.gz` |
 | Windows x86_64 | `vladx-x86_64-pc-windows-msvc.zip` |
 | Площадка и ядро WASM | `vladx-playground.html`, `vladx.wasm` |
+| Для shared-хостинга (площадка + PHP-посредник ИИ) | `vladx-shared.zip` |
 
 Распакуйте архив и запустите `vladx run examples/ru/01-hello.vlstd`. На macOS при первом запуске может понадобиться `xattr -d com.apple.quarantine vladx`. Тег `v*` (например, `v0.1.0`) создаёт постоянный релиз с тем же набором файлов. Сборкой управляет `.github/workflows/release.yml`.
 
@@ -76,19 +77,17 @@ vladx serve [--port 8000]                                    площадка, �
 vladx hmn-eval <папка>                                       оценка перевода .vlhmn на наборе фраз
 ```
 
-Для `.vlhmn` нужен ключ Polza.ai:
+Для `.vlhmn` нужен ИИ. Ключ Polza.ai и модель лежат на сервере: на shared-хостинге это один PHP-файл (`deploy/shared/`, готовый архив `vladx-shared.zip` есть в релизе), локально — `vladx serve` с `POLZA_API_KEY`. Площадка на хостинге сама находит `vladx-llm.php` рядом с собой. CLI ходит через тот же сервер:
 
 ```bash
-export POLZA_API_KEY=…
+export VLADX_LLM_PROXY=https://ваш-сайт/vladx/vladx-llm.php
 ```
 
 ```bash
 vladx run examples/ru/14-shopping.vlhmn
 ```
 
-Перед запуском `vladx` показывает, как ИИ понял текст, и не запускает программу, если уверенность ниже 0.8. Переводы кэшируются: повторный запуск запросов не тратит. Модель меняется переменной `VLADX_LLM_MODEL` (по умолчанию `anthropic/claude-haiku-5.5`).
-
-По умолчанию открыто всё, как в Node: любые файлы и сеть без флагов. Сузить: `--no-files`, `--no-net`, `--restrict-files` (только папка программы).
+Перед запуском `vladx` показывает, как ИИ понял текст, и не запускает программу, если уверенность ниже 0.8. Переводы кэшируются: повторный запуск запросов не тратит. Установка на хостинг — `deploy/shared/README.md`.
 
 ## Проверки
 
@@ -124,6 +123,7 @@ spec/
 site/             площадка: один HTML со встроенным WASM
 examples/         примеры на ru, it, scn (проверяются тестами)
 tests/            негативные случаи и браузерный сценарий
+deploy/shared/    PHP-посредник ИИ для shared-хостинга (ключ и модель — на сервере)
 docs/HANDOVER.md  исходное техническое задание
 ```
 

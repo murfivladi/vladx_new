@@ -2,12 +2,15 @@
 //!
 //! Экспорты: `vx_alloc`, `vx_free`, `vx_run`, `vx_parse`, `vx_result_ptr`,
 //! `vx_result_len`, `vx_set_input`, `vx_set_time`, `vx_set_permissions`,
-//! `vx_set_keywords`, `vx_version`, `vx_reset_host`, `vx_run_ast`, `vx_format`.
+//! `vx_set_keywords`, `vx_version`, `vx_reset_host`, `vx_run_ast`, `vx_format`,
+//! `vx_set_llm`, `vx_translate`.
 //!
 //! Импорты (`env.*`): `vx_host_read`, `vx_host_write`, `vx_host_delete`,
 //! `vx_host_list`, `vx_host_get` — возвращают `u64 = (ptr << 32) | len` на буфер
 //! `"ok\n…"` или `"err\n…"`, выделенный через `vx_alloc`; ядро освобождает его.
 //! `vx_host_ask(kind)` — просьба о доступе (1 — файлы, 2 — сеть), 1 = разрешено.
+//! `vx_host_llm(json)` — диалог перевода `.vlhmn` (`{"messages": [...]}`) серверу ИИ
+//! (`vladx-llm.php` или `vladx serve` → /llm); ответ — `"ok\n<текст модели>"` или `"err\n…"`.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -23,6 +26,7 @@ extern "C" {
     fn vx_host_list() -> u64;
     fn vx_host_get(p: *const u8, l: usize) -> u64;
     fn vx_host_ask(kind: u32) -> u32;
+    fn vx_host_llm(p: *const u8, l: usize) -> u64;
 }
 
 // Вне WASM (cargo test/build на хосте) — заглушки: хоста нет.
@@ -34,6 +38,7 @@ mod stubs {
     pub unsafe fn vx_host_list() -> u64 { 0 }
     pub unsafe fn vx_host_get(_: *const u8, _: usize) -> u64 { 0 }
     pub unsafe fn vx_host_ask(_: u32) -> u32 { 0 }
+    pub unsafe fn vx_host_llm(_: *const u8, _: usize) -> u64 { 0 }
 }
 #[cfg(not(target_arch = "wasm32"))]
 use stubs::*;
@@ -44,6 +49,10 @@ struct State {
     input: VecDeque<String>,
     time_ms: f64,
     perms: u32,
+    /// Модель на сервере ИИ (входит в ключ кэша переводов).
+    llm_model: String,
+    /// Кэш переводов .vlhmn на время жизни страницы.
+    hmn_cache: std::collections::HashMap<String, String>,
 }
 
 thread_local! {
@@ -53,6 +62,8 @@ thread_local! {
         input: VecDeque::new(),
         time_ms: 0.0,
         perms: 3,
+        llm_model: String::new(),
+        hmn_cache: std::collections::HashMap::new(),
     });
 }
 
@@ -330,4 +341,72 @@ pub unsafe extern "C" fn vx_format(ptr: *const u8, len: usize, from: u32, to: u3
             0
         }
     }
+}
+
+// ───────────── .vlhmn в браузере ─────────────
+
+struct WebLlm;
+
+impl vladx_hmn::Llm for WebLlm {
+    fn model(&self) -> String {
+        ST.with(|st| st.borrow().llm_model.clone())
+    }
+    fn chat(&mut self, messages: &[vladx_hmn::Msg]) -> Result<String, String> {
+        let msgs: Vec<serde_json::Value> =
+            messages.iter().map(|m| serde_json::json!({"role": m.role, "content": m.content})).collect();
+        let body = serde_json::json!({ "messages": msgs }).to_string();
+        take_reply(unsafe { vx_host_llm(body.as_ptr(), body.len()) })
+    }
+}
+
+struct WebCache;
+
+impl vladx_hmn::Cache for WebCache {
+    fn get(&mut self, key: &str) -> Option<String> {
+        ST.with(|st| st.borrow().hmn_cache.get(key).cloned())
+    }
+    fn put(&mut self, key: &str, value: &str) {
+        ST.with(|st| st.borrow_mut().hmn_cache.insert(key.to_string(), value.to_string()));
+    }
+}
+
+/// Модель сервера ИИ (страница узнаёт её запросом GET к серверу).
+///
+/// # Safety
+/// `ptr..ptr+len` — валидный буфер UTF-8.
+#[no_mangle]
+pub unsafe extern "C" fn vx_set_llm(ptr: *const u8, len: usize) {
+    let m = read_str(ptr, len);
+    ST.with(|st| st.borrow_mut().llm_model = m);
+}
+
+/// Перевести `.vlhmn` в проверенный AST. Ключа в браузере нет: запросы к модели
+/// уходят через импорт `vx_host_llm` на сервер с ключом. Результат — JSON
+/// `{ok, program, vlstd, confidence, questions, llm_calls, cached, model, diagnostics}`.
+///
+/// # Safety
+/// `ptr..ptr+len` — валидный буфер UTF-8.
+#[no_mangle]
+pub unsafe extern "C" fn vx_translate(ptr: *const u8, len: usize, lang: u32) -> u32 {
+    let text = read_str(ptr, len);
+    let dict = ST.with(|st| st.borrow().dict.clone());
+    let mut llm = WebLlm;
+    let model = vladx_hmn::Llm::model(&llm);
+    let r = vladx_hmn::translate(&text, lang_of(lang), &dict, vladx_runtime::GLOBAL_NAMES, &mut llm, &mut WebCache);
+    let json = match r {
+        Ok(t) => serde_json::json!({
+            "ok": true,
+            "program": vladx_ast::json_without_spans(&t.checked.program),
+            "vlstd": t.checked.text,
+            "confidence": t.confidence,
+            "questions": t.questions,
+            "llm_calls": t.llm_calls,
+            "cached": t.llm_calls == 0 && t.prose_segments > 0,
+            "model": model,
+        }),
+        Err(ds) => serde_json::json!({"ok": false, "diagnostics": ds.iter().map(diag_json).collect::<Vec<_>>()}),
+    };
+    let ok = json["ok"] == serde_json::Value::Bool(true);
+    set_result(json.to_string());
+    ok as u32
 }

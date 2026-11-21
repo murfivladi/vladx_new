@@ -88,19 +88,20 @@ fn handle(mut s: TcpStream, root: PathBuf) {
         return;
     }
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    if path == "/hmn" {
+    // /llm и любой …/vladx-llm.php: та же площадка работает и здесь, и на PHP-хостинге.
+    if path == "/llm" || path.ends_with("/vladx-llm.php") {
+        // Тот же протокол, что у deploy/shared/vladx-llm.php: ключ и модель — у этого сервера.
         let reply = if method == "POST" {
-            if content_length > 256 * 1024 {
-                serde_json::json!({"ok": false, "diagnostics": [{"code": "E-HMN-001", "message": "текст слишком длинный (больше 256 КБ)"}]})
+            if content_length > 512 * 1024 {
+                serde_json::json!({"ok": false, "error": "запрос слишком большой"})
             } else {
                 let mut body = vec![0u8; content_length];
                 if reader.read_exact(&mut body).is_err() {
                     return;
                 }
-                hmn_reply(&body, &root)
+                llm_reply(&body)
             }
         } else {
-            // GET /hmn — есть ли ИИ на этом сервере
             let p = crate::llm::Polza::from_env();
             serde_json::json!({"available": p.is_ok(), "model": crate::llm::provider().model(), "reason": p.err()})
         };
@@ -108,7 +109,7 @@ fn handle(mut s: TcpStream, root: PathBuf) {
         return;
     }
     if method != "GET" && method != "HEAD" {
-        respond(&mut s, "405 Method Not Allowed", "text/plain; charset=utf-8", "только GET (и POST /hmn)".as_bytes(), "");
+        respond(&mut s, "405 Method Not Allowed", "text/plain; charset=utf-8", "только GET (и POST /llm)".as_bytes(), "");
         return;
     }
     if path == "/fetch" {
@@ -152,33 +153,36 @@ fn handle(mut s: TcpStream, root: PathBuf) {
     }
 }
 
-fn diag_json(d: &vladx_ast::Diagnostic) -> serde_json::Value {
-    serde_json::json!({"code": d.code, "message": d.message, "line": d.line, "col": d.col, "len": d.len, "hint": d.hint})
-}
-
-/// POST /hmn {text, lang} → перевод `.vlhmn` ключом сервера (браузеру ключ не нужен).
-fn hmn_reply(body: &[u8], root: &Path) -> serde_json::Value {
+/// POST /llm {messages} → {ok, content}. Принимается только диалог перевода VladX.
+fn llm_reply(body: &[u8]) -> serde_json::Value {
+    use vladx_hmn::{Llm, Msg};
     let req: serde_json::Value = match serde_json::from_slice(body) {
         Ok(v) => v,
-        Err(e) => return serde_json::json!({"ok": false, "diagnostics": [{"code": "E-HMN-002", "message": format!("запрос не JSON: {e}")}]}),
+        Err(e) => return serde_json::json!({"ok": false, "error": format!("запрос не JSON: {e}")}),
     };
-    let text = req["text"].as_str().unwrap_or("");
-    let lang = req["lang"].as_str().and_then(vladx_syntax::Lang::from_code).unwrap_or(vladx_syntax::Lang::Ru);
-    let dict = vladx_syntax::Dictionary::builtin();
-    let mut provider = crate::llm::provider();
-    let mut cache = crate::llm::FileCache { dir: root.join(".vladx-cache").join("hmn") };
-    match vladx_hmn::translate(text, lang, &dict, vladx_runtime::GLOBAL_NAMES, provider.as_mut(), &mut cache) {
-        Ok(t) => serde_json::json!({
-            "ok": true,
-            "program": vladx_ast::json_without_spans(&t.checked.program),
-            "vlstd": t.checked.text,
-            "confidence": t.confidence,
-            "questions": t.questions,
-            "llm_calls": t.llm_calls,
-            "cached": t.llm_calls == 0 && t.prose_segments > 0,
-            "model": provider.model(),
-        }),
-        Err(ds) => serde_json::json!({"ok": false, "diagnostics": ds.iter().map(diag_json).collect::<Vec<_>>()}),
+    let mut msgs = vec![];
+    for m in req["messages"].as_array().cloned().unwrap_or_default() {
+        let role = match m["role"].as_str() {
+            Some("system") => "system",
+            Some("user") => "user",
+            Some("assistant") => "assistant",
+            _ => return serde_json::json!({"ok": false, "error": "неизвестная роль сообщения"}),
+        };
+        msgs.push(Msg { role, content: m["content"].as_str().unwrap_or("").to_string() });
+    }
+    let vladx_dialog = (2..=4).contains(&msgs.len())
+        && msgs[0].role == "system"
+        && msgs[0].content.contains("в программу на языке VladX");
+    if !vladx_dialog {
+        return serde_json::json!({"ok": false, "error": "этот сервер переводит только .vlhmn для VladX"});
+    }
+    let mut p = match crate::llm::Polza::from_env() {
+        Ok(p) => p,
+        Err(e) => return serde_json::json!({"ok": false, "error": e}),
+    };
+    match p.chat(&msgs) {
+        Ok(content) => serde_json::json!({"ok": true, "content": content, "model": p.model()}),
+        Err(e) => serde_json::json!({"ok": false, "error": e}),
     }
 }
 
@@ -188,7 +192,7 @@ pub fn serve(port: u16, root: PathBuf) -> std::io::Result<()> {
     println!("  площадка: http://localhost:{port}/site/playground.html");
     println!("  прокси:   http://localhost:{port}/fetch?url=https://example.com");
     match crate::llm::Polza::from_env() {
-        Ok(_) => println!("  ИИ (.vlhmn): POST http://localhost:{port}/hmn, модель {}", crate::llm::provider().model()),
+        Ok(_) => println!("  ИИ (.vlhmn): http://localhost:{port}/llm, модель {}", crate::llm::provider().model()),
         Err(e) => println!("  ИИ (.vlhmn) выключен: {e}"),
     }
     for stream in listener.incoming().flatten() {

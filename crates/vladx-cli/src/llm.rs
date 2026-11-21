@@ -1,6 +1,10 @@
-//! Провайдер LLM для `.vlhmn`: Polza.ai (OpenAI-совместимый API) и кэш на диске.
+//! Провайдер LLM для `.vlhmn` и кэш на диске.
 //!
-//! Настройка через окружение:
+//! Два пути:
+//! 1. Посредник (рекомендуется): `VLADX_LLM_PROXY=https://сайт/vladx-llm.php` — ключ и модель
+//!    живут на сервере (deploy/shared/vladx-llm.php или `vladx serve` → /llm), клиенту ключ не нужен.
+//!    `VLADX_LLM_PROXY_TOKEN` — токен, если сервер его требует.
+//! 2. Напрямую в Polza.ai (OpenAI-совместимый API):
 //!   VLADX_LLM_KEY | POLZA_API_KEY | POLZA — ключ (Authorization: Bearer …)
 //!   VLADX_LLM_MODEL  — модель (по умолчанию anthropic/claude-haiku-5.5: дешёвая модель для разбора, §15.1)
 //!   VLADX_LLM_URL    — адрес (по умолчанию https://polza.ai/api/v1/chat/completions)
@@ -122,10 +126,81 @@ impl Llm for Unavailable {
     }
 }
 
-/// Провайдер из окружения или «недоступный» с объяснением.
+/// Посредник с ключом на сервере: протокол deploy/shared/vladx-llm.php.
+pub struct Proxy {
+    url: String,
+    token: Option<String>,
+    model: String,
+    agent: ureq::Agent,
+}
+
+impl Proxy {
+    pub fn from_env() -> Option<Result<Proxy, String>> {
+        let url = env("VLADX_LLM_PROXY")?;
+        Some(Proxy::connect(&url, env("VLADX_LLM_PROXY_TOKEN")))
+    }
+
+    /// GET у посредника: доступен ли ИИ и какая модель (модель входит в ключ кэша).
+    pub fn connect(url: &str, token: Option<String>) -> Result<Proxy, String> {
+        let agent = crate::host::agent_for(url, 180);
+        let text = agent
+            .get(url)
+            .call()
+            .map_err(|e| format!("сервер ИИ {url} недоступен: {e}"))?
+            .into_string()
+            .map_err(|e| format!("ответ сервера ИИ {url} не прочитан: {e}"))?;
+        let info: serde_json::Value =
+            serde_json::from_str(&text).map_err(|e| format!("сервер ИИ {url} ответил не JSON: {e}"))?;
+        if info["available"] != serde_json::Value::Bool(true) {
+            let why = info["reason"].as_str().unwrap_or("ИИ выключен");
+            return Err(format!("сервер ИИ {url}: {why}"));
+        }
+        let model = info["model"].as_str().unwrap_or("?").to_string();
+        Ok(Proxy { url: url.to_string(), token, model, agent })
+    }
+}
+
+impl Llm for Proxy {
+    fn model(&self) -> String {
+        self.model.clone()
+    }
+
+    fn chat(&mut self, messages: &[Msg]) -> Result<String, String> {
+        let msgs: Vec<serde_json::Value> =
+            messages.iter().map(|m| serde_json::json!({"role": m.role, "content": m.content})).collect();
+        let mut req = self.agent.post(&self.url).set("Content-Type", "application/json");
+        if let Some(t) = &self.token {
+            req = req.set("X-VladX-Token", t);
+        }
+        let body = serde_json::json!({ "messages": msgs }).to_string();
+        let text = match req.send_string(&body) {
+            Ok(r) => r.into_string(),
+            Err(ureq::Error::Status(_, r)) => r.into_string(),
+            Err(e) => return Err(format!("сервер ИИ недоступен: {e}")),
+        }
+        .map_err(|e| format!("ответ сервера ИИ не прочитан: {e}"))?;
+        let j: serde_json::Value = serde_json::from_str(&text).map_err(|_| format!("сервер ИИ ответил не JSON: {}", text.chars().take(200).collect::<String>()))?;
+        if j["ok"] == serde_json::Value::Bool(true) {
+            j["content"].as_str().map(|s| s.to_string()).ok_or_else(|| "в ответе сервера ИИ нет текста".into())
+        } else {
+            Err(j["error"].as_str().unwrap_or("сервер ИИ вернул ошибку").to_string())
+        }
+    }
+}
+
+/// Провайдер из окружения: посредник (VLADX_LLM_PROXY), иначе Polza напрямую,
+/// иначе «недоступный» с объяснением.
 pub fn provider() -> Box<dyn Llm> {
+    if let Some(p) = Proxy::from_env() {
+        return match p {
+            Ok(p) => Box::new(p),
+            Err(e) => Box::new(Unavailable(e)),
+        };
+    }
     match Polza::from_env() {
         Ok(p) => Box::new(p),
-        Err(e) => Box::new(Unavailable(e)),
+        Err(e) => Box::new(Unavailable(format!(
+            "{e}; или укажите сервер с ключом: VLADX_LLM_PROXY=https://ваш-сайт/vladx-llm.php"
+        ))),
     }
 }

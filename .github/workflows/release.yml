@@ -47,6 +47,10 @@ jobs:
           node-version: 22
       - run: bash scripts/build-site.sh
       - run: npm i --no-save playwright && npx playwright install --with-deps chromium
+      - name: сценарий «shared-хостинг» (PHP-посредник ИИ)
+        run: |
+          command -v php || (sudo apt-get update && sudo apt-get install -y php-cli php-curl)
+          node tests/browser/shared-hosting.mjs
       - name: сценарий files-net
         # api.github.com бывает ограничен по частоте; JSON с CORS берём у jsonplaceholder
         env:
@@ -114,6 +118,11 @@ jobs:
       - run: |
           mkdir -p dist
           cp site/playground.html dist/vladx-playground.html
+          # архив для shared-хостинга: площадка + PHP-посредник ИИ
+          mkdir -p shared
+          cp site/playground.html shared/index.html
+          cp deploy/shared/vladx-llm.php deploy/shared/config.example.php deploy/shared/.htaccess deploy/shared/README.md shared/
+          (cd shared && zip -q -r ../dist/vladx-shared.zip . -x '.*' && zip -q ../dist/vladx-shared.zip .htaccess)
           cp "$(cargo metadata --format-version 1 --no-deps | python3 -c 'import sys,json;print(json.load(sys.stdin)["target_directory"])')/wasm32-unknown-unknown/release/vladx_wasm.wasm" dist/vladx.wasm
       - uses: actions/upload-artifact@v4
         with:
@@ -158,6 +167,7 @@ jobs:
           | macOS Intel | \`vladx-x86_64-apple-darwin.tar.gz\` |
           | Windows x86_64 | \`vladx-x86_64-pc-windows-msvc.zip\` |
           | Площадка (открыть через \`vladx serve\`) | \`vladx-playground.html\` |
+          | Для shared-хостинга: площадка + PHP-посредник ИИ | \`vladx-shared.zip\` |
           | Ядро WebAssembly | \`vladx.wasm\` |
 
           Релиз перезаписывается при каждом push."

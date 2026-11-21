@@ -132,6 +132,7 @@ footer { color: var(--muted); font-size: 12px; padding: 0 16px 20px; }
         <label><input type="checkbox" id="pnet" checked> сеть</label>
         <label title="vladx serve: прокси для сети и ИИ для .vlhmn">сервер <input type="text" id="proxy" value="http://localhost:8000"></label>
         <label><input type="checkbox" id="viaproxy"> через прокси</label>
+        <label title="Сервер с ключом ИИ для .vlhmn: vladx-llm.php на хостинге или vladx serve → /llm">ИИ <input type="text" id="llmurl" placeholder="автоматически"></label>
       </div>
     </div>
     <div class="panel">
@@ -215,6 +216,20 @@ function httpGet(url) {
   }
 }
 
+// ── ИИ для .vlhmn: ключ на сервере, здесь только пересылка диалога ──
+function llmPost(body) {
+  if (!cfg.llmUrl) throw new Error('сервер ИИ не настроен: положите vladx-llm.php рядом со страницей или запустите vladx serve с POLZA_API_KEY');
+  const x = new XMLHttpRequest();
+  x.open('POST', cfg.llmUrl, false);
+  x.setRequestHeader('Content-Type', 'application/json');
+  try { x.send(body); } catch (e) { throw new Error('сервер ИИ недоступен: ' + cfg.llmUrl); }
+  if (x.status === 0) throw new Error('сервер ИИ недоступен: ' + cfg.llmUrl);
+  let j;
+  try { j = JSON.parse(x.responseText); } catch (e) { throw new Error('сервер ИИ ответил не JSON (HTTP ' + x.status + ')'); }
+  if (!j.ok) throw new Error(j.error || 'сервер ИИ вернул ошибку');
+  return j.content;
+}
+
 const imports = { env: {
   vx_host_read: (p, l) => guard(() => readFile(str(p, l))),
   vx_host_write: (pp, pl, dp, dl) => guard(() => {
@@ -229,6 +244,7 @@ const imports = { env: {
   vx_host_list: () => guard(() => listFiles().join('\n')),
   vx_host_get: (p, l) => guard(() => httpGet(str(p, l))),
   // Блокирующе ждать ответа человека нельзя: сообщаем странице и отказываем.
+  vx_host_llm: (p, l) => guard(() => llmPost(str(p, l))),
   vx_host_ask: (kind) => { const k = kind === 1 ? 'files' : 'net'; if (!asks.includes(k)) asks.push(k); return 0; },
 }};
 
@@ -322,6 +338,23 @@ async function handle(m) {
     postMessage({ type: 'reply', id: m.id, result: res });
     try { await finalizeStore(); postMessage({ type: 'stored', files: await storedList() }); }
     catch (e) { postMessage({ type: 'stored', files: await storedList(), error: String((e && e.message) || e) }); }
+    return;
+  }
+  if (m.type === 'translate') {
+    if (!ex) await instantiate();
+    cfg.llmUrl = m.llmUrl || '';
+    const [mp, ml] = put(m.model || ''); ex.vx_set_llm(mp, ml); ex.vx_free(mp, ml);
+    const [sp, sl] = put(m.code);
+    let result;
+    try {
+      ex.vx_translate(sp, sl, m.lang);
+      result = JSON.parse(str(ex.vx_result_ptr(), ex.vx_result_len()));
+      ex.vx_free(sp, sl);
+    } catch (e) {
+      ex = null;
+      result = { ok: false, diagnostics: [{ code: 'E-INTERNAL', message: 'внутренняя ошибка ядра: ' + ((e && e.message) || e), line: 0, col: 0, len: 0 }] };
+    }
+    postMessage({ type: 'reply', id: m.id, result });
     return;
   }
   if (m.type === 'format') {
@@ -496,6 +529,25 @@ $('deny').onclick = () => { $('askpanel').hidden = true; status('доступ о
 const MIN_CONFIDENCE = 0.8;
 let pendingAst = null;
 function serverBase() { return ($('proxy').value.trim() || location.origin).replace(/\/+$/, ''); }
+// Сервер ИИ: из поля «ИИ», иначе vladx-llm.php рядом со страницей, иначе vladx serve → /llm.
+let llmCache = null;
+async function llmInfo() {
+  const typed = $('llmurl').value.trim();
+  if (llmCache && llmCache.typed === typed) return llmCache;
+  const candidates = typed ? [typed] : ['vladx-llm.php', serverBase() + '/llm'];
+  for (const c of candidates) {
+    let url;
+    try { url = new URL(c, location.href).href; } catch (e) { continue; }
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      const i = await r.json();
+      if (typeof i.available === 'boolean') { llmCache = { typed, url, model: i.model || '', available: i.available, reason: i.reason }; return llmCache; }
+    } catch (e) { /* следующий вариант */ }
+  }
+  llmCache = { typed, url: '', model: '', available: false, reason: typed ? 'сервер ИИ ' + typed + ' не отвечает' : 'сервер ИИ не найден (vladx-llm.php или vladx serve → /llm)' };
+  return llmCache;
+}
+$('llmurl').addEventListener('change', () => { llmCache = null; });
 function interpBlock(t) {
   const box = document.createElement('div'); box.className = 'interp';
   const head = document.createElement('div'); head.className = 'head';
@@ -509,14 +561,14 @@ function interpBlock(t) {
 }
 async function translateHmn() {
   status('ИИ переводит текст…');
-  let t;
-  try {
-    const resp = await fetch(serverBase() + '/hmn', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: code.value, lang: LANGS[lang()] }) });
-    t = await resp.json();
-  } catch (e) {
-    return { error: { ok: false, stdout: [], diagnostics: [{ code: 'E-HMN-001', message: 'сервер ИИ недоступен: ' + serverBase() + '/hmn', hint: 'запустите vladx serve с ключом POLZA_API_KEY и укажите его адрес в поле «сервер»' }] } };
+  const info = await llmInfo();
+  // Перевод делает ядро в WASM; к серверу ИИ оно обращается, только если в тексте есть проза.
+  const r = await call({ type: 'translate', code: code.value, lang: lang(), llmUrl: info.available ? info.url : '', model: info.model });
+  const t = r.result;
+  if (!t.ok) {
+    for (const d of t.diagnostics || []) if (d.code === 'E-HMN-001' && !info.available && info.reason) d.hint = info.reason;
+    return { error: Object.assign({ stdout: [] }, t) };
   }
-  if (!t.ok) return { error: Object.assign({ stdout: [] }, t) };
   return { t };
 }
 
@@ -634,10 +686,11 @@ function boot() {
     ready = true; $('run').disabled = false; $('ast').disabled = false;
     status('ядро готово' + (r.storageErr ? ' · хранилище недоступно' : ''));
     refreshFiles(); run();
-    fetch(serverBase() + '/hmn').then(x => x.json()).then(i => {
-      $('fmt').options[1].textContent = '.vlhmn — текст для ИИ' + (i.available ? '' : ' (ИИ выключен)');
-      $('fmt').title = i.available ? 'ИИ на сервере: ' + i.model : 'ИИ выключен: ' + (i.reason || '');
-    }).catch(() => { $('fmt').title = 'сервер ИИ не найден: ' + serverBase(); });
+    llmInfo().then(i => {
+      $('fmt').options[1].textContent = '.vlhmn — текст для ИИ' + (i.available ? '' : ' (ИИ не найден)');
+      $('fmt').title = i.available ? 'ИИ: ' + i.model + ' через ' + i.url : (i.reason || '');
+      if (i.available && !$('llmurl').value) $('llmurl').placeholder = i.url.replace(location.origin, '') + ' · ' + i.model;
+    });
   }).catch(e => fatal(
     'WebAssembly запрещён на этой странице: ' + esc(e.message || e) + '.<br>Обычно это политика безопасности (CSP) без <code>\'wasm-unsafe-eval\'</code>, например во встроенном фрейме. Откройте страницу напрямую через <code>vladx serve</code>. Запасного движка на JavaScript нет намеренно: ядро у VladX одно.'));
 }

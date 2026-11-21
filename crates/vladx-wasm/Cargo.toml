@@ -12,4 +12,5 @@ crate-type = ["cdylib", "rlib"]
 vladx-ast = { path = "../vladx-ast" }
 vladx-syntax = { path = "../vladx-syntax" }
 vladx-runtime = { path = "../vladx-runtime" }
+vladx-hmn = { path = "../vladx-hmn" }
 serde_json = { workspace = true }
