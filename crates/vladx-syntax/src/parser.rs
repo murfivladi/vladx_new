@@ -510,8 +510,9 @@ impl<'a> Parser<'a> {
         let bad = |p: &Self| {
             Diagnostic::error("E-ORDER-008", "Ожидалось имя модуля или путь в кавычках", p.err_at_peek_or_after())
                 .with_hint(format!(
-                    "{} numeri — или — {} \"путь\" {} имя",
+                    "{} {} — или — {} \"путь\" {} имя",
                     p.w("mod.import"),
+                    p.dict.stdlib_word(p.lang, "math"),
                     p.sup("mod.import", "from"),
                     p.sup("mod.import", "take")
                 ))

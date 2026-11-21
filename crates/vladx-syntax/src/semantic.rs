@@ -310,12 +310,15 @@ impl<'a> Checker<'a> {
             }
             Stmt::Import { module, path, names, .. } => {
                 if let Some(m) = module {
-                    let known = self.scopes.first().is_some_and(|g| g.declared.contains_key(m));
+                    let known = self.dict.stdlib_module(m).is_some() || self.scopes.first().is_some_and(|g| g.declared.contains_key(m));
                     if !known {
+                        let list: Vec<String> = self.dict.stdlib_modules().iter().map(|id| self.dict.stdlib_word(self.lang, id)).collect();
                         self.diags.push(
                             Diagnostic::error("E-MODULE-001", format!("Модуль «{m}» не найден"), sp)
-                                .with_hint("модули stdlib: numeri, testo, liste, mappe, caso, tempo, json, file, rete"),
+                                .with_hint(format!("модули stdlib: {}", list.join(", "))),
                         );
+                    } else if self.dict.stdlib_module(m).is_some() {
+                        self.declare_here(m, false, sp, false);
                     }
                 }
                 if path.is_some() {

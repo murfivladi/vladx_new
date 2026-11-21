@@ -70,6 +70,8 @@ pub struct Dictionary {
     pub types: Vec<TypeEntry>,
     /// Слова манифеста vladx.toml (разделы и поля) — `[[manifest]]`.
     pub manifest: Vec<TypeEntry>,
+    /// Модули stdlib (`math`) и их функции (`math.sqrt`) — `[[stdlib]]`.
+    pub stdlib: Vec<TypeEntry>,
     phrases: HashMap<Lang, HashMap<Vec<String>, Vec<Meaning>>>,
     max_words: usize,
 }
@@ -157,6 +159,15 @@ impl Dictionary {
             }
         }
 
+        let mut stdlib = vec![];
+        if let Some(arr) = root.get("stdlib").and_then(|v| v.as_array()) {
+            for item in arr {
+                let t = item.as_table().ok_or("[[stdlib]]: ожидалась таблица")?;
+                let id = t.get("id").and_then(|v| v.as_str()).ok_or("[[stdlib]] без id")?.to_string();
+                stdlib.push(TypeEntry { forms: lang_forms(t, &id)?, id });
+            }
+        }
+
         let mut phrases: HashMap<Lang, HashMap<Vec<String>, Vec<Meaning>>> = HashMap::new();
         let mut max_words = 1;
         for l in Lang::ALL {
@@ -182,7 +193,7 @@ impl Dictionary {
                 }
             }
         }
-        let d = Dictionary { schema_version, default_lang, entries, types, manifest, phrases, max_words };
+        let d = Dictionary { schema_version, default_lang, entries, types, manifest, stdlib, phrases, max_words };
         let errs: Vec<String> = d.validate().into_iter().filter(|p| !p.starts_with("предупреждение")).collect();
         if !errs.is_empty() {
             return Err(errs.join("; "));
@@ -226,6 +237,35 @@ impl Dictionary {
                         l.code(),
                         phrase.join(" ")
                     ));
+                }
+            }
+        }
+        // stdlib: id уникальны, у модуля и функции есть ru-форма, формы не совпадают
+        // между модулями и между функциями одного модуля.
+        let mut ids = std::collections::HashSet::new();
+        let mut owner: HashMap<(String, String), String> = HashMap::new();
+        for t in &self.stdlib {
+            if !ids.insert(t.id.clone()) {
+                problems.push(format!("stdlib: id «{}» повторяется", t.id));
+            }
+            if t.forms[&Lang::Ru].is_empty() {
+                problems.push(format!("stdlib: у «{}» нет русского имени", t.id));
+            }
+            let scope = t.id.rsplit_once('.').map(|(m, _)| m.to_string()).unwrap_or_default();
+            if !scope.is_empty() && !self.stdlib.iter().any(|m| m.id == scope) {
+                problems.push(format!("stdlib: функция «{}» без модуля «{scope}»", t.id));
+            }
+            for l in Lang::ALL {
+                for f in &t.forms[&l] {
+                    // имя модуля пишется как обычное имя: оно не должно быть ключевым словом
+                    if scope.is_empty() && self.phrases.get(&l).is_some_and(|p| p.contains_key(&split_phrase(f))) {
+                        problems.push(format!("stdlib: модуль «{f}» совпадает с ключевым словом ({})", l.code()));
+                    }
+                    if let Some(other) = owner.insert((scope.clone(), norm(f)), t.id.clone()) {
+                        if other != t.id {
+                            problems.push(format!("stdlib: «{f}» — и «{other}», и «{}»", t.id));
+                        }
+                    }
                 }
             }
         }
@@ -284,6 +324,56 @@ impl Dictionary {
     }
 
     /// Нейтральный id слова манифеста: форма любого языка или сам id.
+    /// Модуль stdlib по имени на любом языке: `числа`, `numeri` → `math`.
+    pub fn stdlib_module(&self, word: &str) -> Option<String> {
+        let w = norm(word);
+        self.stdlib
+            .iter()
+            .filter(|t| !t.id.contains('.'))
+            .find(|t| Lang::ALL.iter().any(|l| t.forms[l].iter().any(|f| norm(f) == w)))
+            .map(|t| t.id.clone())
+    }
+
+    /// Функция модуля по имени на любом языке: (`text`, `верхний`) → `text.upper`.
+    pub fn stdlib_fn(&self, module: &str, word: &str) -> Option<String> {
+        let w = norm(word);
+        let pre = format!("{module}.");
+        self.stdlib
+            .iter()
+            .filter(|t| t.id.starts_with(&pre))
+            .find(|t| Lang::ALL.iter().any(|l| t.forms[l].iter().any(|f| norm(f) == w)))
+            .map(|t| t.id.clone())
+    }
+
+    /// Имя модуля или функции stdlib на языке программы (scn без формы → it → ru).
+    pub fn stdlib_word(&self, lang: Lang, id: &str) -> String {
+        let Some(t) = self.stdlib.iter().find(|t| t.id == id) else { return id.to_string() };
+        [lang, Lang::It, Lang::Ru]
+            .iter()
+            .find_map(|l| t.forms[l].first().cloned())
+            .unwrap_or_else(|| id.to_string())
+    }
+
+    /// Все формы имени stdlib на всех языках (синонимы).
+    pub fn stdlib_forms(&self, id: &str) -> Vec<String> {
+        let mut v: Vec<String> = vec![];
+        if let Some(t) = self.stdlib.iter().find(|t| t.id == id) {
+            for l in Lang::ALL {
+                for f in &t.forms[&l] {
+                    if !v.contains(f) {
+                        v.push(f.clone());
+                    }
+                }
+            }
+        }
+        v
+    }
+
+    /// Нейтральные id модулей stdlib в порядке словаря.
+    pub fn stdlib_modules(&self) -> Vec<String> {
+        self.stdlib.iter().filter(|t| !t.id.contains('.')).map(|t| t.id.clone()).collect()
+    }
+
     pub fn manifest_id(&self, word: &str) -> Option<String> {
         let w = norm(word);
         self.manifest

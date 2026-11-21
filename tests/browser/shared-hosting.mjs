@@ -80,7 +80,7 @@ try {
     (await page.evaluate(() => self.crossOriginIsolated)) && (await page.innerText('#st-mode')).includes('как Node') && (await page.innerText('#store-kind')).includes('сервер'));
 
   // как Node: файл на сервере появляется сразу, пока программа ждёт ответа
-  await page.fill('#code', 'file.запиши("заметки/день.txt", "записано по ходу")\nскажи "записал"\nспроси "продолжить?" и сохрани в ответ\nскажи file.прочитай("заметки/день.txt") + " / " + ответ');
+  await page.fill('#code', 'импортируй файлы\nфайлы.запиши("заметки/день.txt", "записано по ходу")\nскажи "записал"\nспроси "продолжить?" и сохрани в ответ\nскажи файлы.прочитай("заметки/день.txt") + " / " + ответ');
   await page.click('#run');
   await page.waitForFunction(() => /ждёт ввода/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
   const ws = await page.evaluate(() => localStorage.getItem('vladx.ws'));
@@ -94,10 +94,10 @@ try {
   check('1d', 'у другого браузера своя рабочая папка', other.ok && other.files.length === 0, JSON.stringify(other));
 
   // как Node: сеть без CORS — через vladx-fetch.php
-  o = await run(`скажи rete.получи("${SITE}")`);
+  o = await run(`импортируй сеть\nскажи сеть.получи("${SITE}")`);
   check('1e', 'rete.получи сайта без CORS — через сервер, как в Node', o.includes('секрет без CORS'), o);
   await page.click('#act-settings'); await page.uncheck('#netserver');
-  o = await run(`скажи rete.получи("${SITE}")`);
+  o = await run(`импортируй сеть\nскажи сеть.получи("${SITE}")`);
   check('1f', 'напрямую из браузера тот же сайт недоступен (CORS) — понятная ошибка', o.includes('E-NET-001') && o.includes('через сервер'), o);
   await page.check('#netserver'); await page.click('#act-explorer');
 

@@ -422,3 +422,591 @@ id = "modules_dir"
 ru = ["пакеты"]
 it = ["pacchetti"]
 scn = ["pacchetti"]
+
+# ═════════════ стандартная библиотека: модули и их функции ═════════════
+# Подключение: импортируй числа · из "vladx:числа" возьми корень. Имена работают на любом
+# языке (все формы — синонимы), так программа читается на языке автора. Исходники stdlib —
+# crates/vladx-runtime/stdlib/*.vlstd (на ru). Итальянские формы — черновик, сицилийские
+# у функций берутся из it, пока их не проверит носитель (§14).
+
+[[stdlib]]
+id = "math"
+ru = ["числа"]
+it = ["numeri"]
+scn = ["nummari"]
+
+[[stdlib]]
+id = "math.sqrt"
+ru = ["корень"]
+it = ["radice"]
+scn = []
+
+[[stdlib]]
+id = "math.abs"
+ru = ["модуль"]
+it = ["assoluto"]
+scn = []
+
+[[stdlib]]
+id = "math.round"
+ru = ["округли"]
+it = ["arrotonda"]
+scn = []
+
+[[stdlib]]
+id = "math.floor"
+ru = ["пол"]
+it = ["pavimento"]
+scn = []
+
+[[stdlib]]
+id = "math.ceil"
+ru = ["потолок"]
+it = ["soffitto"]
+scn = []
+
+[[stdlib]]
+id = "math.pow"
+ru = ["степень"]
+it = ["potenza"]
+scn = []
+
+[[stdlib]]
+id = "math.min"
+ru = ["минимум"]
+it = ["minimo"]
+scn = []
+
+[[stdlib]]
+id = "math.max"
+ru = ["максимум"]
+it = ["massimo"]
+scn = []
+
+[[stdlib]]
+id = "math.random"
+ru = ["случайное"]
+it = ["casuale"]
+scn = []
+
+[[stdlib]]
+id = "math.pi"
+ru = ["пи"]
+it = ["pi_greco"]
+scn = []
+
+[[stdlib]]
+id = "text"
+ru = ["строки"]
+it = ["testo"]
+scn = ["testu"]
+
+[[stdlib]]
+id = "text.len"
+ru = ["длина"]
+it = ["lunghezza"]
+scn = []
+
+[[stdlib]]
+id = "text.upper"
+ru = ["верхний"]
+it = ["maiuscolo"]
+scn = []
+
+[[stdlib]]
+id = "text.lower"
+ru = ["нижний"]
+it = ["minuscolo"]
+scn = []
+
+[[stdlib]]
+id = "text.trim"
+ru = ["обрежь"]
+it = ["rifila"]
+scn = []
+
+[[stdlib]]
+id = "text.split"
+ru = ["раздели"]
+it = ["dividi"]
+scn = []
+
+[[stdlib]]
+id = "text.join"
+ru = ["соедини"]
+it = ["unisci"]
+scn = []
+
+[[stdlib]]
+id = "text.contains"
+ru = ["содержит"]
+it = ["contiene"]
+scn = []
+
+[[stdlib]]
+id = "text.starts"
+ru = ["начинается"]
+it = ["inizia_con"]
+scn = []
+
+[[stdlib]]
+id = "text.ends"
+ru = ["заканчивается"]
+it = ["finisce_con"]
+scn = []
+
+[[stdlib]]
+id = "text.find"
+ru = ["найди"]
+it = ["trova"]
+scn = []
+
+[[stdlib]]
+id = "text.replace"
+ru = ["замени"]
+it = ["sostituisci"]
+scn = []
+
+[[stdlib]]
+id = "text.slice"
+ru = ["кусок"]
+it = ["pezzo"]
+scn = []
+
+[[stdlib]]
+id = "text.char"
+ru = ["символ"]
+it = ["carattere"]
+scn = []
+
+[[stdlib]]
+id = "text.repeat"
+ru = ["повтори"]
+it = ["replica"]
+scn = []
+
+[[stdlib]]
+id = "text.words"
+ru = ["слова"]
+it = ["parole"]
+scn = []
+
+[[stdlib]]
+id = "text.pad"
+ru = ["дополни"]
+it = ["riempi"]
+scn = []
+
+[[stdlib]]
+id = "text.code"
+ru = ["код"]
+it = ["codice"]
+scn = []
+
+[[stdlib]]
+id = "text.from_code"
+ru = ["из_кода"]
+it = ["da_codice"]
+scn = []
+
+[[stdlib]]
+id = "list"
+ru = ["списки"]
+it = ["liste"]
+scn = ["listi"]
+
+[[stdlib]]
+id = "list.push"
+ru = ["добавь"]
+it = ["aggiungi"]
+scn = []
+
+[[stdlib]]
+id = "list.len"
+ru = ["размер"]
+it = ["dimensione"]
+scn = []
+
+[[stdlib]]
+id = "list.get"
+ru = ["элемент", "возьми"]
+it = ["elemento"]
+scn = []
+
+[[stdlib]]
+id = "list.first"
+ru = ["первый"]
+it = ["primo"]
+scn = []
+
+[[stdlib]]
+id = "list.last"
+ru = ["последний"]
+it = ["ultimo"]
+scn = []
+
+[[stdlib]]
+id = "list.pop"
+ru = ["вынь"]
+it = ["estrai"]
+scn = []
+
+[[stdlib]]
+id = "list.sort"
+ru = ["отсортируй", "сортировка"]
+it = ["ordina"]
+scn = []
+
+[[stdlib]]
+id = "list.reverse"
+ru = ["переверни"]
+it = ["inverti"]
+scn = []
+
+[[stdlib]]
+id = "list.contains"
+ru = ["содержит"]
+it = ["contiene"]
+scn = []
+
+[[stdlib]]
+id = "list.find"
+ru = ["найди"]
+it = ["trova"]
+scn = []
+
+[[stdlib]]
+id = "list.slice"
+ru = ["кусок"]
+it = ["pezzo"]
+scn = []
+
+[[stdlib]]
+id = "list.join"
+ru = ["соедини"]
+it = ["unisci"]
+scn = []
+
+[[stdlib]]
+id = "list.pick"
+ru = ["выбери"]
+it = ["scegli"]
+scn = []
+
+[[stdlib]]
+id = "list.filter"
+ru = ["отбери"]
+it = ["filtra"]
+scn = []
+
+[[stdlib]]
+id = "list.map"
+ru = ["преобразуй"]
+it = ["trasforma"]
+scn = []
+
+[[stdlib]]
+id = "list.reduce"
+ru = ["сверни"]
+it = ["riduci"]
+scn = []
+
+[[stdlib]]
+id = "list.sum"
+ru = ["сумма"]
+it = ["somma"]
+scn = []
+
+[[stdlib]]
+id = "list.range"
+ru = ["диапазон"]
+it = ["intervallo"]
+scn = []
+
+[[stdlib]]
+id = "map"
+ru = ["словари"]
+it = ["mappe"]
+scn = ["mappi"]
+
+[[stdlib]]
+id = "map.keys"
+ru = ["ключи"]
+it = ["chiavi"]
+scn = []
+
+[[stdlib]]
+id = "map.values"
+ru = ["значения"]
+it = ["valori"]
+scn = []
+
+[[stdlib]]
+id = "map.pairs"
+ru = ["пары"]
+it = ["coppie"]
+scn = []
+
+[[stdlib]]
+id = "map.has"
+ru = ["есть"]
+it = ["ha"]
+scn = []
+
+[[stdlib]]
+id = "map.get"
+ru = ["значение"]
+it = ["valore"]
+scn = []
+
+[[stdlib]]
+id = "map.set"
+ru = ["задай"]
+it = ["imposta"]
+scn = []
+
+[[stdlib]]
+id = "map.remove"
+ru = ["удали"]
+it = ["rimuovi"]
+scn = []
+
+[[stdlib]]
+id = "map.len"
+ru = ["размер"]
+it = ["dimensione"]
+scn = []
+
+[[stdlib]]
+id = "map.merge"
+ru = ["объедини"]
+it = ["unisci"]
+scn = []
+
+[[stdlib]]
+id = "random"
+ru = ["случай"]
+it = ["caso"]
+scn = ["casu"]
+
+[[stdlib]]
+id = "random.frac"
+ru = ["дробь"]
+it = ["frazione"]
+scn = []
+
+[[stdlib]]
+id = "random.int"
+ru = ["целое"]
+it = ["intero"]
+scn = []
+
+[[stdlib]]
+id = "random.pick"
+ru = ["выбери"]
+it = ["scegli"]
+scn = []
+
+[[stdlib]]
+id = "random.shuffle"
+ru = ["перемешай"]
+it = ["mescola"]
+scn = []
+
+[[stdlib]]
+id = "time"
+ru = ["время"]
+it = ["tempo"]
+scn = ["tempu"]
+
+[[stdlib]]
+id = "time.now"
+ru = ["сейчас"]
+it = ["adesso"]
+scn = []
+
+[[stdlib]]
+id = "time.ms"
+ru = ["миллисекунды"]
+it = ["millisecondi"]
+scn = []
+
+[[stdlib]]
+id = "time.clock"
+ru = ["часы"]
+it = ["orologio"]
+scn = []
+
+[[stdlib]]
+id = "json"
+ru = ["json"]
+it = ["json"]
+scn = ["json"]
+
+[[stdlib]]
+id = "json.write"
+ru = ["запиши"]
+it = ["codifica"]
+scn = []
+
+[[stdlib]]
+id = "json.read"
+ru = ["прочитай"]
+it = ["decodifica"]
+scn = []
+
+[[stdlib]]
+id = "fs"
+ru = ["файлы"]
+it = ["file"]
+scn = ["file"]
+
+[[stdlib]]
+id = "fs.read"
+ru = ["прочитай"]
+it = ["leggi"]
+scn = []
+
+[[stdlib]]
+id = "fs.write"
+ru = ["запиши"]
+it = ["salva"]
+scn = []
+
+[[stdlib]]
+id = "fs.append"
+ru = ["допиши"]
+it = ["accoda"]
+scn = []
+
+[[stdlib]]
+id = "fs.exists"
+ru = ["есть"]
+it = ["esiste"]
+scn = []
+
+[[stdlib]]
+id = "fs.list"
+ru = ["список"]
+it = ["elenco"]
+scn = []
+
+[[stdlib]]
+id = "fs.delete"
+ru = ["удали"]
+it = ["elimina"]
+scn = []
+
+[[stdlib]]
+id = "net"
+ru = ["сеть"]
+it = ["rete"]
+scn = ["riti"]
+
+[[stdlib]]
+id = "net.get"
+ru = ["получи"]
+it = ["ottieni"]
+scn = []
+
+[[stdlib]]
+id = "net.get_json"
+ru = ["получи_json", "получиJson"]
+it = ["ottieni_json"]
+scn = []
+
+[[stdlib]]
+id = "net.allowed"
+ru = ["разрешено"]
+it = ["permesso"]
+scn = []
+
+[[stdlib]]
+id = "path"
+ru = ["путь"]
+it = ["percorso"]
+scn = ["pircorsu"]
+
+[[stdlib]]
+id = "path.join"
+ru = ["соедини"]
+it = ["unisci"]
+scn = []
+
+[[stdlib]]
+id = "path.normalize"
+ru = ["нормализуй"]
+it = ["normalizza"]
+scn = []
+
+[[stdlib]]
+id = "path.name"
+ru = ["имя"]
+it = ["nome"]
+scn = []
+
+[[stdlib]]
+id = "path.stem"
+ru = ["без_расширения"]
+it = ["senza_estensione"]
+scn = []
+
+[[stdlib]]
+id = "path.ext"
+ru = ["расширение"]
+it = ["estensione"]
+scn = []
+
+[[stdlib]]
+id = "path.dir"
+ru = ["папка"]
+it = ["cartella"]
+scn = []
+
+[[stdlib]]
+id = "events"
+ru = ["события"]
+it = ["eventi"]
+scn = ["eventi"]
+
+[[stdlib]]
+id = "events.source"
+ru = ["источник"]
+it = ["sorgente"]
+scn = []
+
+[[stdlib]]
+id = "assert"
+ru = ["проверка"]
+it = ["verifica"]
+scn = ["virifica"]
+
+[[stdlib]]
+id = "assert.ok"
+ru = ["истинно"]
+it = ["certo"]
+scn = []
+
+[[stdlib]]
+id = "assert.equal"
+ru = ["одинаково"]
+it = ["stesso"]
+scn = []
+
+[[stdlib]]
+id = "assert.not_equal"
+ru = ["различно"]
+it = ["diverso"]
+scn = []
+
+[[stdlib]]
+id = "assert.throws"
+ru = ["бросает"]
+it = ["solleva"]
+scn = []
+
+[[stdlib]]
+id = "assert.fail"
+ru = ["провал"]
+it = ["fallisci"]
+scn = []

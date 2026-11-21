@@ -128,6 +128,15 @@ else
   echo "       (реестр пропущен: нет php)"
 fi
 
+echo "== stdlib на VladX"
+printf 'скажи numeri.корень(16)\n' > "$TMP/old.vlstd"
+out="$("$VX" run "$TMP/old.vlstd" 2>&1)"
+has "$out" "W-DEPRECATED-001" && has "$out" "4" && ok "прежний numeri без подключения — работает с предупреждением" || bad "устаревший модуль: $out"
+printf 'importa testo\ndì testo.maiuscolo("ciao")\n' > "$TMP/it.vlstd"
+[ "$("$VX" run "$TMP/it.vlstd" --lang it 2>&1)" = "CIAO" ] && ok "имена stdlib на языке программы (testo.maiuscolo)" || bad "итальянские имена stdlib"
+printf 'импортируй строки\n\nскажи строки.символ("аб", 5)\n' > "$TMP/err.vlstd"
+has "$("$VX" run "$TMP/err.vlstd" 2>&1)" "err.vlstd:3:7  E-INDEX-001" && ok "ошибка в stdlib — на строке программы" || bad "место ошибки stdlib"
+
 echo "== негативные случаи"
 for pair in "01-order:E-ORDER-001" "02-unclosed-block:E-SYNTAX-003" "03-mutate-const:E-NAME-002" "04-unknown-word:E-SYNTAX-016"; do
   f="tests/negative/${pair%%:*}.vlstd"; want="${pair##*:}"
@@ -137,7 +146,7 @@ done
 
 echo "== файлы: пути и флаги"
 mkdir -p "$TMP/p/sub"
-printf 'file.запиши("../вверх.txt", "через ..")\nскажи file.прочитай("%s/вверх.txt")\n' "$TMP/p" > "$TMP/p/sub/a.vlstd"
+printf 'импортируй файлы\nфайлы.запиши("../вверх.txt", "через ..")\nскажи файлы.прочитай("%s/вверх.txt")\n' "$TMP/p" > "$TMP/p/sub/a.vlstd"
 [ "$("$VX" run "$TMP/p/sub/a.vlstd" 2>&1)" = "через .." ] && ok "абсолютный путь и .." || bad "абсолютный путь и .."
 has "$("$VX" run "$TMP/p/sub/a.vlstd" --restrict-files 2>&1)" 'restrict-files' && ok "--restrict-files отказывает с объяснением" || bad "--restrict-files"
 has "$("$VX" run "$TMP/p/sub/a.vlstd" --no-files 2>&1)" 'E-FILE-001' && ok "--no-files → E-FILE-001" || bad "--no-files"
@@ -145,7 +154,7 @@ has "$("$VX" run "$TMP/p/sub/a.vlstd" --no-files 2>&1)" 'E-FILE-001' && ok "--no
 echo "== сеть"
 has "$("$VX" run examples/ru/12-net.vlstd --no-net 2>&1)" 'E-NET-001' && ok "--no-net → E-NET-001" || bad "--no-net"
 if [ "${VLADX_NET:-1}" != "0" ]; then
-  printf 'пусть с будет rete.получи("https://example.com")\nскажи testo.содержит(с, "Example Domain")\n' > "$TMP/net.vlstd"
+  printf 'импортируй сеть\nимпортируй строки\nпусть с будет сеть.получи("https://example.com")\nскажи строки.содержит(с, "Example Domain")\n' > "$TMP/net.vlstd"
   [ "$("$VX" run "$TMP/net.vlstd" 2>&1)" = "истина" ] && ok "настоящий HTTPS без флагов (example.com)" || bad "HTTPS к example.com"
   if out="$("$VX" run examples/ru/12-net.vlstd 2>&1)"; then ok "12-net: $(echo "$out" | head -1)"; else
     echo "       (12-net: $(echo "$out" | head -1) — api.github.com может быть закрыт сетью окружения)"; fi

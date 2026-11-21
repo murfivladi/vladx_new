@@ -48,6 +48,8 @@ pub struct NativeFn {
 
 pub struct Module {
     pub name: String,
+    /// Имена для подсказок (на языке программы); пусто — все ключи `fns`.
+    pub names: Vec<String>,
     pub fns: IndexMap<String, Value>,
 }
 

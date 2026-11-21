@@ -62,6 +62,13 @@ pub struct Interp<'h> {
     cur_file: Option<Rc<str>>,
     /// Язык файлов из пакетов (у пакета свой язык в его vladx.toml).
     file_langs: HashMap<String, vladx_syntax::Lang>,
+    /// Модули stdlib как значения (`импортируй числа`): id → модуль.
+    builtin_values: HashMap<String, Value>,
+    /// Место вызова stdlib из кода программы: ошибки внутри stdlib показываются здесь
+    /// (как Node показывает строку программы, а не строку внутри lib/fs.js).
+    site: Option<(Span, Option<Rc<str>>)>,
+    /// Ядро stdlib (одно на запуск).
+    core: Value,
 }
 
 const MAX_WARNINGS: usize = 100;
@@ -90,6 +97,9 @@ impl<'h> Interp<'h> {
             loading: vec![],
             cur_file: None,
             file_langs: HashMap::new(),
+            builtin_values: HashMap::new(),
+            site: None,
+            core: crate::stdlib::core::module(),
         };
         crate::stdlib::install(&me.globals);
         me
@@ -99,6 +109,19 @@ impl<'h> Interp<'h> {
     pub fn set_project(&mut self, dict: vladx_syntax::Dictionary, lang: vladx_syntax::Lang) {
         self.dict = Some(dict);
         self.lang = lang;
+    }
+
+    fn in_stdlib(&self) -> bool {
+        self.cur_file.as_deref().is_some_and(|f| f.starts_with("vladx:"))
+    }
+
+    /// Место вызова stdlib, если сейчас исполняется её код.
+    fn stdlib_site(&self) -> Option<(Span, Option<Rc<str>>)> {
+        if self.in_stdlib() {
+            self.site.clone()
+        } else {
+            None
+        }
     }
 
     /// Папка исполняемого сейчас файла относительно корня проекта.
@@ -167,6 +190,7 @@ impl<'h> Interp<'h> {
     }
 
     pub(crate) fn warn(&mut self, code: &str, msg: String, sp: Span) {
+        let sp = self.stdlib_site().map(|(s, _)| s).unwrap_or(sp);
         if self.warnings.len() >= MAX_WARNINGS || !self.warned.insert((code.to_string(), sp.line, sp.col)) {
             return;
         }
@@ -318,7 +342,16 @@ impl<'h> Interp<'h> {
         match self.exec_inner(s, env) {
             // Ошибка помечается файлом того кода, где она случилась ("" — главная программа).
             Err(Ctl::Fail(mut d)) if d.file.is_none() => {
-                d.file = Some(self.cur_file.as_deref().unwrap_or("").to_string());
+                match self.stdlib_site() {
+                    // ошибка внутри stdlib — на месте вызова в программе
+                    Some((sp, file)) => {
+                        d.line = sp.line;
+                        d.col = sp.col;
+                        d.len = sp.len;
+                        d.file = Some(file.as_deref().unwrap_or("").to_string());
+                    }
+                    None => d.file = Some(self.cur_file.as_deref().unwrap_or("").to_string()),
+                }
                 Err(Ctl::Fail(d))
             }
             other => other,
@@ -459,18 +492,16 @@ impl<'h> Interp<'h> {
             }
             Stmt::Throw { value, .. } => {
                 let v = self.eval(value, env)?;
-                return Err(Ctl::Throw(v, sp, self.cur_file.clone()));
+                return Err(match self.stdlib_site() {
+                    Some((site, file)) => Ctl::Throw(v, site, file),
+                    None => Ctl::Throw(v, sp, self.cur_file.clone()),
+                });
             }
             Stmt::Import { module, path, .. } => {
                 if let Some(m) = module {
-                    if !matches!(self.globals.get(m), Some(Value::Module(_))) {
-                        return fail_hint(
-                            "E-MODULE-001",
-                            format!("Модуль «{m}» не найден"),
-                            "модули stdlib: numeri, testo, liste, mappe, caso, tempo, json, file, rete",
-                            sp,
-                        );
-                    }
+                    // `импортируй числа` — модуль stdlib под своим именем (как import * as fs)
+                    let v = self.builtin_value(m, sp)?;
+                    env.define(m, v, false);
                 }
                 if let Some(p) = path {
                     let Stmt::Import { names, .. } = s else { unreachable!() };
@@ -502,8 +533,15 @@ impl<'h> Interp<'h> {
             match v {
                 Some(v) => env.define(n, v, false),
                 None => {
-                    let mut have: Vec<String> =
-                        menv.vars.borrow().keys().filter(|k| !k.starts_with('_') && !crate::GLOBAL_NAMES.contains(&k.as_str())).cloned().collect();
+                    let mut have: Vec<String> = match (&self.dict, id.strip_prefix("vladx:")) {
+                        // модуль stdlib: имена на языке программы
+                        (Some(d), Some(mid)) => {
+                            let pre = format!("{mid}.");
+                            let l = self.cur_lang();
+                            d.stdlib.iter().filter(|t| t.id.starts_with(&pre)).map(|t| d.stdlib_word(l, &t.id)).collect()
+                        }
+                        _ => menv.vars.borrow().keys().filter(|k| !k.starts_with('_') && !crate::GLOBAL_NAMES.contains(&k.as_str())).cloned().collect(),
+                    };
                     have.sort();
                     return fail_hint(
                         "E-MODULE-002",
@@ -573,6 +611,9 @@ impl<'h> Interp<'h> {
     fn load_module(&mut self, spec: &str, sp: Span) -> R<(String, Rc<Env>)> {
         if spec.ends_with(".vlhmn") {
             return fail("E-MODULE-001", format!("Импорт «{spec}» не поддерживается: модулем может быть только .vlstd"), sp);
+        }
+        if let Some(name) = spec.strip_prefix("vladx:") {
+            return self.load_builtin(name, sp);
         }
         let local = spec.starts_with("./") || spec.starts_with("../") || spec.starts_with('/');
         let mut mod_lang = self.cur_lang();
@@ -667,6 +708,152 @@ impl<'h> Interp<'h> {
         Ok((id, menv))
     }
 
+    /// Модули stdlib на языке программы — для подсказок.
+    fn builtin_list(&self) -> String {
+        let Some(d) = &self.dict else { return String::new() };
+        let l = self.cur_lang();
+        d.stdlib_modules().iter().map(|m| d.stdlib_word(l, m)).collect::<Vec<_>>().join(", ")
+    }
+
+    /// `vladx:имя` — модуль stdlib: исходник на VladX выполняется один раз;
+    /// наружу — все его имена на всех языках (по словарю).
+    fn load_builtin(&mut self, name: &str, sp: Span) -> R<(String, Rc<Env>)> {
+        if name == "ядро" {
+            if !self.in_stdlib() {
+                return fail_hint(
+                    "E-MODULE-001",
+                    "«ядро» — внутренний модуль stdlib, программе он недоступен",
+                    format!("модули stdlib: {}", self.builtin_list()),
+                    sp,
+                );
+            }
+            let e = Env::new(None, None);
+            if let Value::Module(m) = &self.core {
+                for (k, v) in &m.fns {
+                    e.define(k, v.clone(), false);
+                }
+            }
+            return Ok(("vladx:ядро".into(), e));
+        }
+        let Some(dict) = self.dict.clone() else {
+            return fail("E-MODULE-001", "импорт модулей недоступен: нет словаря проекта", sp);
+        };
+        let Some(id) = dict.stdlib_module(name) else {
+            return fail_hint(
+                "E-MODULE-001",
+                format!("Модуль «{name}» не найден в stdlib"),
+                format!("модули stdlib: {}", self.builtin_list()),
+                sp,
+            );
+        };
+        let key = format!("vladx:{id}");
+        if let Some(e) = self.modules.get(&key) {
+            return Ok((key, e.clone()));
+        }
+        if self.loading.contains(&key) {
+            return fail("E-MODULE-003", format!("Циклический импорт в stdlib: {}", key), sp);
+        }
+        let Some(src) = crate::stdlib::source(&id) else {
+            return fail("E-MODULE-001", format!("Модуль «{name}» есть в словаре, но не в stdlib"), sp);
+        };
+        let (prog, diags) = vladx_syntax::analyze(src, vladx_syntax::Lang::Ru, &dict, crate::stdlib::STDLIB_GLOBALS);
+        if let Some(mut d) = diags.into_iter().find(|d| d.is_error()) {
+            d.file = Some(key.clone());
+            return Err(Ctl::Fail(d));
+        }
+        let prog = prog.expect("без ошибок разбора AST есть");
+        let menv = Env::new(None, None);
+        crate::stdlib::install(&menv);
+        menv.define("ядро", self.core.clone(), false);
+        self.file_langs.insert(key.clone(), vladx_syntax::Lang::Ru);
+        self.loading.push(key.clone());
+        let saved = self.cur_file.replace(Rc::from(key.as_str()));
+        let r = self.exec_stmts(&prog.body, &menv);
+        self.cur_file = saved;
+        self.loading.pop();
+        match r {
+            Ok(()) | Err(Ctl::Return(_)) | Err(Ctl::Break) | Err(Ctl::Continue) => {}
+            Err(e) => return Err(e),
+        }
+        self.closure_envs.push(Rc::downgrade(&menv));
+        // экспорт: каждое имя — под всеми его формами из словаря
+        let exports = Env::new(None, None);
+        for (n, b) in menv.vars.borrow().iter() {
+            let global = crate::stdlib::GLOBAL_FNS.contains(&n.as_str()) && matches!(b.value, Value::Native(_));
+            if n.starts_with('_') || n == "ядро" || global || matches!(b.value, Value::Module(_)) {
+                continue;
+            }
+            match dict.stdlib_fn(&id, n) {
+                Some(fid) => {
+                    for f in dict.stdlib_forms(&fid) {
+                        exports.define(&f, b.value.clone(), false);
+                    }
+                }
+                None => exports.define(n, b.value.clone(), false),
+            }
+        }
+        self.modules.insert(key.clone(), exports.clone());
+        Ok((key, exports))
+    }
+
+    /// Сверка stdlib со словарём: каждый модуль загружается, каждая его функция
+    /// есть в словаре, и каждое имя словаря есть в модуле. Пусто — всё сходится.
+    pub fn stdlib_problems(&mut self) -> Vec<String> {
+        let Some(dict) = self.dict.clone() else { return vec!["нет словаря".into()] };
+        let mut out = vec![];
+        for id in dict.stdlib_modules() {
+            let name = dict.stdlib_word(vladx_syntax::Lang::Ru, &id);
+            let exports = match self.load_builtin(&name, Span::new(1, 1, 1)) {
+                Ok((_, e)) => e,
+                Err(Ctl::Fail(d)) => {
+                    out.push(format!("{name}: {}:{} {} {}", d.line, d.col, d.code, d.message));
+                    continue;
+                }
+                Err(_) => {
+                    out.push(format!("{name}: не загрузился"));
+                    continue;
+                }
+            };
+            let vars = exports.vars.borrow();
+            for k in vars.keys() {
+                if dict.stdlib_fn(&id, k).is_none() {
+                    out.push(format!("{name}.{k}: нет в словаре ([[stdlib]] id = \"{id}.…\")"));
+                }
+            }
+            let pre = format!("{id}.");
+            for t in dict.stdlib.iter().filter(|t| t.id.starts_with(&pre)) {
+                for f in dict.stdlib_forms(&t.id) {
+                    if !vars.contains_key(&f) {
+                        out.push(format!("{name}: нет «{f}» ({})", t.id));
+                    }
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// Модуль stdlib как значение — для `импортируй числа` и прежних глобальных `numeri`.
+    fn builtin_value(&mut self, name: &str, sp: Span) -> R<Value> {
+        let (key, exports) = self.load_builtin(name, sp)?;
+        if let Some(v) = self.builtin_values.get(&key) {
+            return Ok(v.clone());
+        }
+        let id = key.trim_start_matches("vladx:").to_string();
+        let lang = self.cur_lang();
+        let (shown_name, shown) = match &self.dict {
+            Some(d) => {
+                let pre = format!("{id}.");
+                let fns: Vec<String> = d.stdlib.iter().filter(|t| t.id.starts_with(&pre)).map(|t| d.stdlib_word(lang, &t.id)).collect();
+                (d.stdlib_word(lang, &id), fns)
+            }
+            None => (name.to_string(), vec![]),
+        };
+        let v = crate::stdlib::module_value(&shown_name, shown, &exports);
+        self.builtin_values.insert(key, v.clone());
+        Ok(v)
+    }
+
     fn assign_var(&mut self, env: &Rc<Env>, name: &str, v: Value, sp: Span) -> R<()> {
         match env.assign(name, v) {
             Ok(()) => Ok(()),
@@ -738,6 +925,26 @@ impl<'h> Interp<'h> {
             }
             Expr::Identifier { name, .. } => match env.get(name) {
                 Some(v) => v,
+                None if crate::stdlib::DEPRECATED_GLOBALS.contains(&name.as_str()) => {
+                    // прежний глобальный модуль: работает, но просит подключить явно
+                    let l = self.cur_lang();
+                    let (imp, own) = match &self.dict {
+                        Some(d) => (
+                            d.form(l, "mod.import"),
+                            d.stdlib_module(name).map(|id| d.stdlib_word(l, &id)).filter(|w| w != name),
+                        ),
+                        None => (String::new(), None),
+                    };
+                    let tail = own.map(|w| format!(" (на языке программы модуль называется «{w}»)")).unwrap_or_default();
+                    self.warn(
+                        "W-DEPRECATED-001",
+                        format!("модуль «{name}» без подключения устарел — подключите его: {imp} {name}{tail}"),
+                        sp,
+                    );
+                    let v = self.builtin_value(name, sp)?;
+                    self.globals.define(name, v.clone(), false);
+                    v
+                }
                 None => return fail("E-NAME-004", format!("Имя «{name}» не объявлено"), sp),
             },
             Expr::SelfExpr { .. } => match env.this() {
@@ -811,9 +1018,15 @@ impl<'h> Interp<'h> {
                     );
                 }
                 self.depth += 1;
+                // вход из программы в stdlib: запомнить место вызова
+                let enters = c.file.as_deref().is_some_and(|f| f.starts_with("vladx:")) && !self.in_stdlib();
+                let saved_site = if enters { self.site.replace((sp, self.cur_file.clone())) } else { None };
                 let saved = std::mem::replace(&mut self.cur_file, c.file.clone());
                 let r = self.call_closure(&c, args, this, sp);
                 self.cur_file = saved;
+                if enters {
+                    self.site = saved_site;
+                }
                 self.depth -= 1;
                 match r {
                     Ok(()) | Err(Ctl::Break) | Err(Ctl::Continue) => Ok(Value::Null),
@@ -944,7 +1157,7 @@ impl<'h> Interp<'h> {
                 None => fail_hint(
                     "E-MODULE-002",
                     format!("В модуле «{}» нет функции «{prop}»", m.name),
-                    format!("есть: {}", m.fns.keys().cloned().collect::<Vec<_>>().join(", ")),
+                    format!("есть: {}", if m.names.is_empty() { m.fns.keys().cloned().collect::<Vec<_>>() } else { m.names.clone() }.join(", ")),
                     sp,
                 ),
             },

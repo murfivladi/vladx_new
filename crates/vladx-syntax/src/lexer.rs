@@ -442,7 +442,7 @@ pub fn highlight(src: &str, lang: Lang, dict: &Dictionary, globals: &[&str]) -> 
                     } else {
                         "prop"
                     }
-                } else if globals.contains(&name.as_str()) {
+                } else if globals.contains(&name.as_str()) || dict.stdlib_module(name).is_some() {
                     "mod"
                 } else if prev.is_some_and(|p| p.has_op("fn.declare")) || next.is_some_and(|n| n.is_sym("(") && n.line == t.line) {
                     "fn"

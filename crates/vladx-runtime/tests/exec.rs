@@ -62,7 +62,7 @@ fn missing_return_gives_null_and_defaults_evaluated_each_call() {
 fn argument_count_errors() {
     assert_eq!(code("функция f(a) {\n}\nf(1, 2)"), "E-ARGS-001");
     assert_eq!(code("функция f(a, b) {\n}\nf(1)"), "E-ARGS-002");
-    assert_eq!(code("скажи numeri.корень(x = 4)"), "E-ARGS-003");
+    assert_eq!(code("скажи длина(x = 4)"), "E-ARGS-003");
     assert_eq!(code("функция f(a: число) {\n}\nf(\"а\")"), "E-TYPE-002");
 }
 
@@ -492,4 +492,78 @@ fn bare_import_is_strict_like_node() {
     assert!(d.hint.as_deref().unwrap_or("").contains("vladpm add нет-такого"), "{:?}", d.hint);
     let ok = run_full("из \"./утилиты\" возьми x\nскажи x", Lang::Ru, h(), Options::default()).0;
     assert_eq!(ok.stdout, ["1"]);
+}
+
+// ───────────── stdlib на VladX: vladx:модули ─────────────
+
+#[test]
+fn stdlib_matches_dictionary() {
+    let p = vladx_runtime::stdlib_problems(&Dictionary::builtin());
+    assert!(p.is_empty(), "stdlib и словарь расходятся:\n{}", p.join("\n"));
+}
+
+#[test]
+fn stdlib_modules_are_imported_like_node() {
+    let src = "импортируй строки\nиз \"vladx:списки\" возьми отбери, диапазон\nскажи строки.верхний(\"а\")\nскажи отбери(диапазон(6), функция(x) {\n  верни x % 2 равно 0\n})";
+    assert_eq!(out(src), ["А", "[0, 2, 4]"]);
+    // ядро программе недоступно
+    let r = run("из \"vladx:ядро\" возьми тип");
+    assert_eq!(r.diagnostics[0].code, "E-MODULE-001");
+    assert_eq!(code("импортируй нечто"), "E-MODULE-001");
+    assert_eq!(code("импортируй числа\nскажи числа.нечто(1)"), "E-MODULE-002");
+}
+
+#[test]
+fn stdlib_names_work_in_every_language() {
+    let src = "importa testo\nimporta liste\nda \"vladx:numeri\" prendi radice\ndì testo.maiuscolo(\"ciao\")\ndì liste.ordina([3, 1, 2])\ndì radice(81)\ndì testo.верхний(\"mix\")";
+    let (r, _) = run_full(src, Lang::It, MemHost::default(), Options::default());
+    assert!(r.ok, "{:?}", r.diagnostics);
+    assert_eq!(r.stdout, ["CIAO", "[1, 2, 3]", "9", "MIX"]);
+}
+
+#[test]
+fn old_global_modules_still_work_with_a_warning() {
+    let r = run("скажи numeri.корень(16)\nскажи numeri.корень(25)\nскажи liste.размер([1, 2])");
+    assert!(r.ok, "{:?}", r.diagnostics);
+    assert_eq!(r.stdout, ["4", "5", "2"]);
+    let w: Vec<_> = r.warnings.iter().filter(|w| w.code == "W-DEPRECATED-001").collect();
+    assert_eq!(w.len(), 2, "одно предупреждение на модуль: {:?}", r.warnings);
+    assert!(w[0].message.contains("импортируй numeri") && w[0].message.contains("«числа»"), "{}", w[0].message);
+    // с подключением — без предупреждений
+    let r = run("импортируй numeri\nскажи numeri.корень(16)");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+}
+
+#[test]
+fn stdlib_errors_point_to_the_call_in_the_program() {
+    let r = run("импортируй строки\n\nскажи строки.символ(\"аб\", 5)");
+    let d = &r.diagnostics[0];
+    assert_eq!((d.code.as_str(), d.line, d.file.as_deref()), ("E-INDEX-001", 3, None), "{d:?}");
+    // неверный тип аргумента — по подсказке типа в stdlib
+    let r = run("импортируй строки\nскажи строки.верхний(5)");
+    assert_eq!((r.diagnostics[0].code.as_str(), r.diagnostics[0].line), ("E-TYPE-002", 2));
+    // ошибка внутри функции программы, вызванной из stdlib, — в программе
+    let r = run("импортируй списки\nскажи списки.преобразуй([1], функция(x) {\n  верни x / 0\n})");
+    assert_eq!((r.diagnostics[0].code.as_str(), r.diagnostics[0].line), ("E-MATH-001", 3));
+    // и ловится
+    assert_eq!(out("импортируй строки\nпопробуй {\n  строки.символ(\"а\", 3)\n} поймай е {\n  скажи е.код\n}"), ["E-INDEX-001"]);
+}
+
+#[test]
+fn new_modules_path_events_assert() {
+    let src = "импортируй путь\nскажи путь.соедини(\"a/b\", \"../c/./d.txt\")\nскажи путь.нормализуй(\"/x//y/../z\")\nскажи путь.имя(\"a/b/c.tar.gz\")\nскажи путь.расширение(\"a/b/c.tar.gz\")\nскажи путь.без_расширения(\"c.txt\")\nскажи путь.папка(\"a/b/c.txt\")\nскажи путь.папка(\"c.txt\")";
+    assert_eq!(out(src), ["a/c/d.txt", "/x/z", "c.tar.gz", ".gz", "c", "a/b", "."]);
+    let src = "импортируй события\nпусть к будет события.источник()\nфункция громко(кто) {\n  скажи \"нажал {кто}\"\n}\nк.на(\"нажата\", громко).один_раз(\"нажата\", функция(кто) {\n  скажи \"впервые {кто}\"\n})\nк.сообщи(\"нажата\", \"Аня\")\nк.сообщи(\"нажата\", \"Боря\")\nк.сними(\"нажата\", громко)\nскажи к.сообщи(\"нажата\", \"Вера\")\nскажи к.слушатели(\"нажата\")";
+    assert_eq!(out(src), ["нажал Аня", "впервые Аня", "нажал Боря", "ложь", "0"]);
+    let r = run("импортируй проверка\nпроверка.одинаково([1, 2], [1, 2])\nпроверка.одинаково(1 + 1, 3)");
+    let d = &r.diagnostics[0];
+    assert_eq!((d.code.as_str(), d.line), ("E-ASSERT-001", 3));
+    assert!(d.message.contains("ожидалось «3», получено «2»"), "{}", d.message);
+    assert_eq!(out("импортируй проверка\nпусть е будет проверка.бросает(функция() {\n  брось \"ой\"\n})\nскажи е"), ["ой"]);
+}
+
+#[test]
+fn list_and_text_helpers() {
+    let src = "импортируй списки\nимпортируй строки\nимпортируй словари\nскажи списки.отсортируй([3, 1, 2], функция(а, б) {\n  верни б - а\n})\nскажи списки.сверни([1, 2, 3, 4], функция(с, x) {\n  верни с + x\n})\nскажи списки.диапазон(5, 0, -2)\nскажи списки.сумма([1, 2, 3])\nскажи строки.обрежь(\"  да  \") + \"|\"\nскажи строки.дополни(7, 3, \"0\")\nскажи строки.слова(\" раз  два \")\nскажи словари.значение({а: 1}, \"б\", 0)\nскажи словари.объедини({а: 1}, {б: 2})";
+    assert_eq!(out(src), ["[3, 2, 1]", "10", "[5, 3, 1]", "6", "да|", "007", "[\"раз\", \"два\"]", "0", "{а: 1, б: 2}"]);
 }

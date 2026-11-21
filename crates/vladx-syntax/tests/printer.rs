@@ -42,6 +42,21 @@ fn canonical_examples_are_already_formatted() {
 }
 
 #[test]
+fn stdlib_sources_are_canonical() {
+    // stdlib на VladX — тоже эталон стиля (как lib/*.js в Node проходит линтер).
+    let d = Dictionary::builtin();
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../vladx-runtime/stdlib");
+    let mut n = 0;
+    for e in std::fs::read_dir(dir).unwrap().flatten() {
+        let src = std::fs::read_to_string(e.path()).unwrap();
+        let out = format_source(&src, Lang::Ru, Lang::Ru, &d).unwrap_or_else(|x| panic!("{:?}: {}", e.path(), x.message));
+        assert_eq!(out, src, "{:?}: не в каноническом виде (vladx fmt --write)", e.path());
+        n += 1;
+    }
+    assert_eq!(n, 12);
+}
+
+#[test]
 fn translation_between_languages_keeps_ast() {
     let d = Dictionary::builtin();
     let mut translated = 0;

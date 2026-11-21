@@ -139,6 +139,16 @@ pub fn run_program(p: &Program, dict: &Dictionary, host: &mut dyn Host, opts: Op
     }
 }
 
+/// Сверка stdlib со словарём (см. [`Interp::stdlib_problems`]). Пусто — всё сходится.
+pub fn stdlib_problems(dict: &Dictionary) -> Vec<String> {
+    let mut host = MemHost::default();
+    let mut it = Interp::new(&mut host, Options::default(), words_for(dict, Lang::Ru));
+    it.set_project(dict.clone(), Lang::Ru);
+    let p = it.stdlib_problems();
+    it.cleanup();
+    p
+}
+
 /// Хост в памяти: для тестов и встраивания. Файлы — словарь, сеть — заготовки.
 #[derive(Debug, Default)]
 pub struct MemHost {

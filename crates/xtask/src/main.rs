@@ -28,6 +28,8 @@ fn main() {
     }
     let drafts = d.entries.iter().filter(|e| e.is_op && e.status == "draft").count();
     println!("словарь: {} операций ({} draft), {} слов выражений, {} типов", d.op_count(), drafts, d.entries.len() - d.op_count(), d.types.len());
+    let mods = d.stdlib_modules();
+    println!("stdlib: {} модулей, {} функций", mods.len(), d.stdlib.len() - mods.len());
     for l in Lang::ALL {
         println!("  {:<3} — {} словоформ", l.code(), d.all_forms(l).len());
     }
