@@ -245,6 +245,27 @@ fn ask_reads_input() {
     assert_eq!(r.stdout, ["как тебя зовут? Аня", "здравствуй, Аня"]);
 }
 
+#[test]
+fn interactive_ask_stops_and_replays_with_answers() {
+    let src = "спроси \"как тебя зовут?\" и сохрани в имя\nизменяй лет станет \"\"\nпопробуй {\n  спроси \"сколько лет?\" и сохрани в лет\n} поймай е {\n  скажи \"не должно ловиться\"\n}\nскажи \"{имя}, {лет}\"";
+    let opts = Options { interactive: true, ..Options::default() };
+    // без ответов — ждёт первый вопрос
+    let (r, _) = run_full(src, Lang::Ru, MemHost::default(), opts.clone());
+    assert_eq!((r.diagnostics[0].code.as_str(), r.diagnostics[0].message.as_str()), ("E-ASK-WAIT", "как тебя зовут?"));
+    // с одним ответом — ждёт второй, «попробуй» не перехватывает ожидание
+    let mut h = MemHost::default();
+    h.inputs.push_back("Аня".into());
+    let (r, _) = run_full(src, Lang::Ru, h, opts.clone());
+    assert_eq!(r.diagnostics[0].message, "сколько лет?");
+    assert_eq!(r.stdout, ["как тебя зовут? Аня"]);
+    // со всеми ответами — доходит до конца
+    let mut h = MemHost::default();
+    h.inputs.extend(["Аня".to_string(), "30".to_string()]);
+    let (r, _) = run_full(src, Lang::Ru, h, opts);
+    assert!(r.ok, "{:?}", r.diagnostics);
+    assert_eq!(r.stdout.last().unwrap(), "Аня, 30");
+}
+
 // ───────────── файлы и сеть ─────────────
 
 #[test]

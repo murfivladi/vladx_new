@@ -229,6 +229,8 @@ JSON по `spec/ast.schema.json` (draft 2020-12, `schema_version = 1`). Диск
 
 Сборка: `cargo build -p vladx-wasm --target wasm32-unknown-unknown --release`, без wasm-bindgen; стек 32 МБ (`.cargo/config.toml`).
 
+Для редактора площадки: `vx_tokens(src, len, lang)` — разметка для подсветки синтаксиса тем же лексером (`{"t": [[строка, колонка, длина, вид]…], "e": ошибка}`), `vx_check(src, len, lang)` — живая проверка без запуска, `vx_set_interactive(1)` — интерактивный «спроси»: без готового ответа программа останавливается (`{"waiting": {"prompt": …}}`), человек отвечает в терминале, и программа запускается заново со всеми ответами (время, случайности и ответы сети в пределах сеанса те же; запись в хранилище — только при настоящем завершении).
+
 Дополнительно: `vx_translate(text, len, lang) → 1/0` — перевод `.vlhmn` (§11), `vx_set_llm(model)` — модель сервера ИИ для ключа кэша, импорт `env.vx_host_llm(json) → u64` — диалог серверу ИИ; `vx_run_ast(json, len, maxSteps) → 1/0` — проверить (как в §11) и исполнить готовый AST, в результате есть поле `vlstd`; `vx_format(src, len, from, to) → 1/0` — текст на другом языке или `{ok:false, diagnostics}`.
 
 Экспорты: `vx_alloc(len)`, `vx_free(ptr, len)`, `vx_run(src, len, lang, maxSteps) → 1/0`, `vx_parse(src, len, lang) → 1/0`, `vx_result_ptr()`, `vx_result_len()`, `vx_set_input(ptr, len)`, `vx_set_time(ms: f64)`, `vx_set_permissions(bits)` (бит 0 — файлы, бит 1 — сеть), `vx_set_keywords(ptr, len) → 1/0`, `vx_version()`, `vx_reset_host()`. `lang`: 0 — ru, 1 — it, 2 — scn; `maxSteps = 0` — 3 000 000.

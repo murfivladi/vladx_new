@@ -57,14 +57,16 @@ async function run(code) {
   await page.click('#run');
   await page.waitForTimeout(50);
   await idle();
-  return page.innerText('#output');
+  // без строки-команды «$ vladx run …» в начале терминала
+  return (await page.innerText('#output')).replace(/^\$ [^\n]*\n/, '');
 }
-async function filesPanel() { return page.$$eval('#files li:not(.empty) span', els => els.map(e => e.textContent)); }
+async function filesPanel() { return page.$$eval('#files li:not(.empty) span:not(.ico)', els => els.map(e => e.textContent)); }
 
 await page.goto(PAGE);
 await ready();
 
 // 1. файлы без разрешения → E-FILE-001 и просьба человеку; после согласия программа идёт
+await page.click('#act-settings');
 await page.uncheck('#pfiles');
 let out = await run('file.запиши("проба.txt", "1")\nскажи "записано"');
 const askShown = await page.isVisible('#askpanel');
@@ -89,7 +91,7 @@ let panel = await filesPanel();
 check(3, 'панель файлов показывает 2 файла', panel.length === 2, JSON.stringify(panel));
 
 // 4. после перезагрузки файлы на месте и читаются
-await page.reload(); await ready();
+await page.reload(); await ready(); await page.click('#act-settings');
 out = await run('скажи file.прочитай("заметка.txt")\nскажи file.прочитай("папка/вложенный.txt")');
 check(4, 'после перезагрузки файлы на месте', out.includes('первая строка') && out.includes('вложенные папки тоже работают'), out);
 
@@ -98,15 +100,23 @@ out = await run('file.удали("заметка.txt")\nскажи file.спис
 check(5, 'удаление → файла нет в списке', !out.includes('заметка.txt') && out.includes('ложь'), out);
 
 // 6. после перезагрузки удалённый файл не возвращается
-await page.reload(); await ready();
+await page.reload(); await ready(); await page.click('#act-settings');
 out = await run('скажи file.список()');
 panel = await filesPanel();
 check(6, 'после перезагрузки удалённый не вернулся', !out.includes('заметка.txt') && out.includes('папка/вложенный.txt') && !panel.includes('заметка.txt'), out);
 
-// 7. спроси получает ответ из панели ввода
-await page.fill('#input', 'Мария');
-out = await run('спроси "как тебя зовут?" и сохрани в имя\nскажи "здравствуй, {имя}"');
-check(7, 'спроси получает ответ из панели ввода', out.includes('здравствуй, Мария'), out);
+// 7. спроси: вопрос в терминале, ответ вводится прямо там (Enter), программа продолжается
+await idle();
+await page.fill('#code', 'скажи "начало"\nспроси "как тебя зовут?" и сохрани в имя\nспроси "город?" и сохрани в город\nскажи "здравствуй, {имя} из {город}"');
+await page.click('#run');
+await page.waitForFunction(() => /ждёт ввода/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
+const prompt1 = await page.innerText('#term-prompt');
+await page.fill('#term-input', 'Мария'); await page.press('#term-input', 'Enter');
+await page.waitForFunction(() => /ждёт ввода/.test(document.getElementById('status').textContent) && /город/.test(document.getElementById('term-prompt').textContent), null, { timeout: 30000 });
+await page.fill('#term-input', 'Палермо'); await page.press('#term-input', 'Enter');
+await page.waitForTimeout(50); await idle();
+out = await page.innerText('#output');
+check(7, 'спроси: ответ в терминале, два вопроса подряд', prompt1 === 'как тебя зовут?' && out.includes('как тебя зовут? Мария') && out.includes('здравствуй, Мария из Палермо') && out.split('начало').length === 2, out);
 
 // 8. сеть напрямую (сайт с CORS) → число
 out = await run(`пусть о будет rete.получиJson("${NET_URL}")\nпусть n будет о.${NET_FIELD}\nскажи n + 0 больше -1\nскажи n`);

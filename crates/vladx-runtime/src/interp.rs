@@ -313,7 +313,12 @@ impl<'h> Interp<'h> {
             Stmt::Ask { prompt, name, .. } => {
                 let p = self.eval(prompt, env)?;
                 let p = self.display(&p);
-                let answer = self.host.input(&p).unwrap_or_default();
+                let answer = match self.host.input(&p) {
+                    Some(a) => a,
+                    // Ответа ещё нет: остановиться и дать человеку ответить (см. Options::interactive).
+                    None if self.opts.interactive => return fail(crate::ASK_WAIT, p, sp),
+                    None => String::new(),
+                };
                 self.stdout.push(format!("{p} {answer}"));
                 let v = Value::str(&answer);
                 match env.mutability(name) {
@@ -397,7 +402,7 @@ impl<'h> Interp<'h> {
             Stmt::Try { body, error_name, handler, .. } => {
                 let caught = match self.exec_block(body, env) {
                     Err(Ctl::Throw(v, _)) => v,
-                    Err(Ctl::Fail(d)) if !d.code.starts_with("E-LIMIT") => {
+                    Err(Ctl::Fail(d)) if !d.code.starts_with("E-LIMIT") && d.code != crate::ASK_WAIT => {
                         Value::Error(Rc::new(ErrorVal { code: d.code, message: d.message }))
                     }
                     other => return other,

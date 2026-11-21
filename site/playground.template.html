@@ -6,147 +6,270 @@
 <title>VladX — площадка</title>
 <style>
 :root {
-  --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1c1a; --muted: #6b6860; --line: #e2dfd6;
-  --accent: #b4441f; --accent-ink: #ffffff; --code-bg: #fbfaf7; --gutter: #a39f94;
-  --ok: #2f7d4a; --warn: #9a6a00; --warn-bg: #fff6dc; --err: #b3261e; --err-bg: #fdecea;
-  --chip: #efece4; --focus: #2b6cb0;
+  --bg: #1e1f22; --side: #191a1d; --bar: #2b2d31; --panel: #1b1c1f; --ink: #dcdee3; --muted: #8b9099;
+  --line: #303238; --hover: #2a2c31; --active: #34373d; --accent: #e0703f; --accent-ink: #1a1009;
+  --run: #3fa66b; --sel: rgba(94, 145, 214, .35); --curline: rgba(255, 255, 255, .035);
+  --status: #b4441f; --status-ink: #fff; --err: #f2867c; --warn: #e3b341; --ok: #6cc28b; --focus: #79a8e0;
+  --t-kw: #c792ea; --t-lit: #f78c6c; --t-op: #89ddff; --t-fn: #82aaff; --t-mod: #ffcb6b; --t-prop: #80cbc4;
+  --t-num: #f78c6c; --t-str: #c3e88d; --t-hole: #ffcb6b; --t-com: #6f7682; --t-punct: #9aa3ad; --t-id: #dcdee3;
+  --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
 }
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
   :root {
-    --bg: #161513; --panel: #1f1e1b; --ink: #ecebe6; --muted: #a09d94; --line: #34322d;
-    --accent: #e0703f; --accent-ink: #1a1009; --code-bg: #1a1917; --gutter: #6e6b63;
-    --ok: #6cc28b; --warn: #e3b341; --warn-bg: #2d2615; --err: #f2867c; --err-bg: #34191a;
-    --chip: #2a2925; --focus: #79a8e0;
+    --bg: #ffffff; --side: #f3f3f4; --bar: #e9e9eb; --panel: #f8f8f9; --ink: #1f2328; --muted: #6a6f78;
+    --line: #d9dadd; --hover: #e6e7ea; --active: #dcdde1; --accent: #b4441f; --accent-ink: #fff;
+    --run: #2f8a56; --sel: rgba(70, 120, 200, .25); --curline: rgba(0, 0, 0, .035);
+    --status: #b4441f; --err: #c0362c; --warn: #9a6a00; --ok: #2f7d4a; --focus: #2b6cb0;
+    --t-kw: #8b3fb8; --t-lit: #b5481f; --t-op: #0f6f9e; --t-fn: #2856b8; --t-mod: #8a5a00; --t-prop: #127a6e;
+    --t-num: #b5481f; --t-str: #3c7a1e; --t-hole: #8a5a00; --t-com: #808791; --t-punct: #5f6873; --t-id: #1f2328;
   }
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--ink);
-  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+body { display: flex; flex-direction: column; overflow: hidden; }
+[hidden] { display: none !important; }
 button, select, input, textarea { font: inherit; color: inherit; }
-button { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
-button:hover { border-color: var(--muted); }
-button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
-button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-kbd { font: 11px ui-monospace, monospace; opacity: .75; margin-left: 6px; }
-header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
-.brand { font-weight: 800; font-size: 19px; letter-spacing: -.02em; margin-right: 6px; }
-.brand span { font-weight: 500; font-size: 12px; color: var(--muted); margin-left: 4px; }
-select { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
-#status { color: var(--muted); font-size: 13px; margin-left: auto; }
-#banner { margin: 12px 16px 0; padding: 12px 14px; border-radius: 10px; background: var(--err-bg); color: var(--err); border: 1px solid var(--err); }
-#banner code { font-family: ui-monospace, monospace; }
-nav#chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px 0; }
-nav#chips button { background: var(--chip); border: 1px solid transparent; border-radius: 999px; padding: 3px 11px; font-size: 13px; }
-nav#chips button.active { border-color: var(--accent); color: var(--accent); }
-main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; padding: 12px 16px 24px; }
-@media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); } }
-.editor { display: flex; border: 1px solid var(--line); border-radius: 10px; background: var(--code-bg); overflow: hidden; height: min(70vh, 640px); min-height: 280px; }
-#gutter { margin: 0; padding: 12px 8px 12px 12px; text-align: right; color: var(--gutter); user-select: none; overflow: hidden;
-  font: 14px/1.55 ui-monospace, "SF Mono", Menlo, Consolas, monospace; min-width: 3.2em; border-right: 1px solid var(--line); }
-#code { flex: 1; border: 0; resize: none; padding: 12px; background: transparent; outline: none; white-space: pre; overflow: auto;
-  font: 14px/1.55 ui-monospace, "SF Mono", Menlo, Consolas, monospace; tab-size: 2; }
-.side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
-.panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
-#output { font: 13.5px/1.5 ui-monospace, Menlo, Consolas, monospace; min-height: 120px; max-height: 46vh; overflow: auto; white-space: pre-wrap; word-break: break-word; }
-#output .warn { color: var(--warn); background: var(--warn-bg); border-radius: 6px; padding: 2px 6px; margin: 2px 0; }
-#output .diag { color: var(--err); background: var(--err-bg); border-radius: 8px; padding: 8px 10px; margin: 6px 0; cursor: pointer; }
-#output .diag .src { color: var(--ink); opacity: .85; margin-top: 4px; }
-#output .diag .hint { color: var(--ink); margin-top: 4px; }
-#output .meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
-#output pre { margin: 0; }
-.interp { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; background: var(--code-bg); }
-.interp .head { color: var(--muted); font-size: 12px; margin-bottom: 4px; font-family: system-ui, sans-serif; }
+button { background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 4px 9px; cursor: pointer; }
+button:hover:not(:disabled) { background: var(--hover); }
+button:disabled { opacity: .45; cursor: default; }
+select, input[type=text] { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 7px; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+/* ── шапка ── */
+.titlebar { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--bar); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.brand { font-weight: 800; font-size: 15px; letter-spacing: -.02em; margin-right: 8px; display: flex; align-items: center; gap: 6px; }
+.brand .logo { width: 18px; height: 18px; border-radius: 5px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-size: 12px; }
+.brand small { font-weight: 500; color: var(--muted); font-size: 11px; }
+.sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+#run { background: var(--run); color: #fff; font-weight: 600; padding: 4px 12px; }
+#run:hover:not(:disabled) { filter: brightness(1.1); background: var(--run); }
+#stop { color: var(--err); }
+.spacer { flex: 1; }
+kbd { font: 10px var(--mono); opacity: .7; margin-left: 5px; }
+#menu-btn { display: none; }
+#banner { margin: 8px 10px 0; padding: 10px 12px; border-radius: 8px; color: var(--err); border: 1px solid var(--err); }
+#banner code { font-family: var(--mono); }
+
+/* ── рабочая область ── */
+.workbench { flex: 1; display: grid; grid-template-columns: 44px 250px minmax(0, 1fr); min-height: 0; }
+.activitybar { background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; padding-top: 6px; gap: 4px; }
+.activitybar button { width: 34px; height: 34px; padding: 0; font-size: 17px; color: var(--muted); border-radius: 8px; }
+.activitybar button.active { color: var(--ink); background: var(--active); }
+.sidebar { background: var(--side); border-right: 1px solid var(--line); overflow: auto; min-height: 0; }
+.sidebar h3 { margin: 0; padding: 9px 12px 5px; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+.sidebar h3 .actions { margin-left: auto; display: flex; gap: 2px; }
+.sidebar h3 .actions button { padding: 0 6px; font-size: 14px; color: var(--muted); }
+.tree { list-style: none; margin: 0; padding: 0 0 6px; }
+.tree li { display: flex; align-items: center; gap: 6px; padding: 3px 10px 3px 22px; cursor: pointer; white-space: nowrap; }
+.tree li:hover { background: var(--hover); }
+.tree li.current { background: var(--active); }
+.tree li .ico { width: 14px; text-align: center; color: var(--muted); font-size: 11px; flex: none; }
+.tree li > span:not(.ico) { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.tree li button { padding: 0 5px; font-size: 12px; color: var(--muted); visibility: hidden; }
+.tree li:hover button { visibility: visible; }
+.tree li.empty { color: var(--muted); cursor: default; white-space: normal; font-size: 12px; }
+.tree .group { padding: 4px 12px 2px; color: var(--muted); font-size: 11px; cursor: pointer; user-select: none; }
+.tree .group::before { content: "▾ "; }
+.tree .group.closed::before { content: "▸ "; }
+.settings { padding: 4px 12px 14px; display: grid; gap: 8px; }
+.settings label { display: flex; align-items: center; gap: 7px; }
+.settings .field { display: grid; gap: 3px; }
+.settings .field span { color: var(--muted); font-size: 12px; }
+.settings .note { color: var(--muted); font-size: 12px; }
+
+/* ── редактор ── */
+.main { display: grid; grid-template-rows: auto minmax(0, 1fr) 5px var(--panel-h, 34%); min-height: 0; min-width: 0; }
+.tabs { display: flex; background: var(--side); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.tab { display: flex; align-items: center; gap: 6px; padding: 7px 10px 7px 12px; border-right: 1px solid var(--line); cursor: pointer; color: var(--muted); white-space: nowrap; }
+.tab.active { background: var(--bg); color: var(--ink); box-shadow: inset 0 2px 0 var(--accent); }
+.tab .close { padding: 0 4px; border-radius: 4px; font-size: 13px; line-height: 1; visibility: hidden; }
+.tab.active .close, .tab:hover .close { visibility: visible; }
+.tab.dirty .close::before { content: "●"; font-size: 10px; }
+.tab.dirty .close { visibility: visible; }
+.tab.dirty .close:hover::before { content: "×"; font-size: 13px; }
+.tab:not(.dirty) .close::before { content: "×"; }
+.editor { display: flex; min-height: 0; position: relative; background: var(--bg); }
+#gutter { margin: 0; padding: 10px 10px 10px 6px; min-width: 52px; text-align: right; color: var(--muted); opacity: .75; user-select: none; overflow: hidden;
+  font: 14px/21px var(--mono); white-space: pre; }
+.code-wrap { position: relative; flex: 1; min-width: 0; overflow: hidden; }
+#hl, #code { position: absolute; inset: 0; margin: 0; padding: 10px 14px 40px; font: 14px/21px var(--mono); white-space: pre; tab-size: 2; letter-spacing: 0; }
+#hl { overflow: hidden; pointer-events: none; color: var(--t-id); }
+#code { overflow: auto; color: transparent; caret-color: var(--ink); background: transparent; border: 0; outline: none; resize: none; }
+#code::selection { background: var(--sel); color: transparent; }
+#code::placeholder { color: var(--muted); }
+#curline { position: absolute; left: 0; right: 0; height: 21px; background: var(--curline); pointer-events: none; }
+.k-kw { color: var(--t-kw); } .k-lit { color: var(--t-lit); } .k-op { color: var(--t-op); }
+.k-fn { color: var(--t-fn); } .k-mod { color: var(--t-mod); } .k-prop { color: var(--t-prop); }
+.k-num { color: var(--t-num); } .k-str { color: var(--t-str); } .k-hole { color: var(--t-hole); }
+.k-com { color: var(--t-com); font-style: italic; } .k-punct { color: var(--t-punct); }
+.k-prose { color: var(--ink); }
+.d-err { text-decoration: underline wavy var(--err); text-decoration-skip-ink: none; text-underline-offset: 3px; }
+.d-warn { text-decoration: underline wavy var(--warn); text-decoration-skip-ink: none; text-underline-offset: 3px; }
+
+/* ── нижняя панель ── */
+.splitter { cursor: row-resize; background: var(--line); }
+.splitter:hover, .splitter.drag { background: var(--focus); }
+.panel { background: var(--panel); display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+.panel-tabs { display: flex; align-items: center; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--line); }
+.panel-tabs > button[data-tab] { border-radius: 0; padding: 7px 10px; text-transform: uppercase; font-size: 11px; letter-spacing: .06em; color: var(--muted); }
+.panel-tabs > button.active { color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
+.badge { display: inline-block; min-width: 16px; padding: 0 5px; border-radius: 8px; background: var(--active); color: var(--ink); font-size: 10px; text-align: center; margin-left: 4px; }
+.badge.err { background: var(--err); color: #1b1b1b; }
+.view { overflow: auto; min-height: 0; }
+.term { font: 13px/1.5 var(--mono); padding: 8px 12px 12px; }
+.term .cmd { color: var(--muted); }
+.term .line { white-space: pre-wrap; word-break: break-word; }
+.term .warn { color: var(--warn); }
+.term .diag { color: var(--err); margin: 6px 0; cursor: pointer; white-space: pre-wrap; }
+.term .diag .src { color: var(--ink); opacity: .85; }
+.term .diag .hint { color: var(--ink); }
+.term .meta { color: var(--muted); margin-top: 6px; }
+.term .meta.ok { color: var(--ok); } .term .meta.bad { color: var(--err); }
+#term-ask { display: flex; align-items: center; gap: 0; white-space: pre; }
+#term-prompt { color: var(--ink); }
+#term-input { flex: 1; min-width: 60px; border: 0; background: transparent; padding: 0 0 0 1ch; font: inherit; color: var(--t-str); outline: none; caret-color: var(--accent); }
+#term-ask .hint { color: var(--muted); font-size: 11px; margin-left: 8px; font-family: system-ui, sans-serif; }
+.interp { border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; }
+.interp .head { color: var(--muted); font-size: 11px; margin-bottom: 4px; font-family: system-ui, sans-serif; }
 .interp pre { margin: 0; }
 .interp .q { color: var(--warn); margin-top: 4px; }
-#lowconf { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--warn); border-radius: 10px; }
-#lowconf p { margin: 0 0 8px; }
-#askpanel { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--accent); border-radius: 10px; }
-#askpanel p { margin: 0 0 8px; }
-#askpanel .row { display: flex; gap: 8px; flex-wrap: wrap; }
-textarea#input { width: 100%; min-height: 54px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--code-bg); resize: vertical; }
-.perms { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 14px; }
-.perms input[type=text] { width: 200px; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; background: var(--code-bg); }
-#files { list-style: none; margin: 0 0 8px; padding: 0; font: 13px ui-monospace, Menlo, Consolas, monospace; }
-#files li { display: flex; align-items: center; gap: 6px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
-#files li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#files li button { padding: 1px 8px; font-size: 12px; }
-#files li.empty { color: var(--muted); border: 0; font-family: inherit; }
-.row { display: flex; gap: 6px; flex-wrap: wrap; }
-.row input { flex: 1; min-width: 120px; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; background: var(--code-bg); }
-footer { color: var(--muted); font-size: 12px; padding: 0 16px 20px; }
+.card { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--accent); border-radius: 8px; font-family: system-ui, sans-serif; }
+.card p { margin: 0 0 8px; }
+.card .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.card .primary { background: var(--accent); color: var(--accent-ink); }
+#lowconf { border-color: var(--warn); }
+.problems { list-style: none; margin: 0; padding: 4px 0; }
+.problems li { display: flex; gap: 8px; padding: 3px 12px; cursor: pointer; align-items: baseline; }
+.problems li:hover { background: var(--hover); }
+.problems .sev { width: 14px; flex: none; }
+.problems .sev.error { color: var(--err); } .problems .sev.warning { color: var(--warn); }
+.problems .code { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.problems .where { color: var(--muted); margin-left: auto; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+.problems .empty { color: var(--muted); cursor: default; }
+#astview pre { margin: 0; padding: 8px 12px; font: 12px/1.45 var(--mono); }
+
+/* ── строка состояния ── */
+.statusbar { flex: none; display: flex; align-items: center; gap: 14px; padding: 2px 10px; background: var(--status); color: var(--status-ink); font-size: 12px; white-space: nowrap; overflow: hidden; }
+.statusbar .spacer { flex: 1; }
+.statusbar button { color: inherit; padding: 0 4px; border-radius: 3px; }
+.statusbar button:hover { background: rgba(255, 255, 255, .15); }
+
+@media (max-width: 760px) {
+  #menu-btn { display: inline-block; }
+  .workbench { grid-template-columns: minmax(0, 1fr); }
+  .activitybar { display: none; }
+  .sidebar { position: fixed; z-index: 10; top: 0; bottom: 0; left: 0; width: min(86vw, 300px); transform: translateX(-100%); transition: transform .15s; box-shadow: 0 0 40px rgba(0,0,0,.4); }
+  body.side-open .sidebar { transform: none; }
+  .brand small, .hide-narrow { display: none; }
+  .main { --panel-h: 42%; }
+}
 </style>
 </head>
 <body>
-<header>
-  <div class="brand">VladX<span>v0.1</span></div>
-  <select id="lang" aria-label="Язык ключевых слов">
+<header class="titlebar">
+  <button id="menu-btn" title="Проводник и настройки" aria-label="Меню">☰</button>
+  <div class="brand"><span class="logo">V</span>VladX <small>v0.1</small></div>
+  <button id="run" disabled title="Запустить (Ctrl+Enter)">▶ Запустить<kbd class="hide-narrow">Ctrl+Enter</kbd></button>
+  <button id="stop" disabled title="Остановить (Esc)">■</button>
+  <span class="sep"></span>
+  <select id="lang" aria-label="Язык ключевых слов" title="Язык ключевых слов">
     <option value="0">ru — русский</option>
     <option value="1">it — italiano</option>
     <option value="2">scn — sicilianu</option>
   </select>
-  <select id="fmt" aria-label="Формат программы">
+  <select id="fmt" aria-label="Формат программы" title="Формат программы">
     <option value="vlstd">.vlstd — код</option>
     <option value="vlhmn">.vlhmn — текст для ИИ</option>
   </select>
-  <select id="tolang" aria-label="Перевести код на другой язык">
+  <span class="sep hide-narrow"></span>
+  <button id="format" disabled title="Форматировать (Shift+Alt+F)">{ } Формат</button>
+  <select id="tolang" aria-label="Перевести код на другой язык" title="Перевести ключевые слова на другой язык">
     <option value="">перевести на…</option>
     <option value="0">ru</option>
     <option value="1">it</option>
     <option value="2">scn</option>
   </select>
-  <button id="run" class="primary" disabled>▶ Запустить<kbd>Ctrl+Enter</kbd></button>
-  <button id="ast" disabled>AST</button>
-  <span id="status">загрузка ядра…</span>
+  <button id="ast" disabled title="Показать AST">AST</button>
 </header>
 <div id="banner" hidden></div>
-<nav id="chips" aria-label="Примеры"></nav>
-<main>
-  <section>
+<div class="workbench">
+  <nav class="activitybar" aria-label="Панели">
+    <button id="act-explorer" class="active" title="Проводник">🗀</button>
+    <button id="act-settings" title="Настройки">⚙</button>
+  </nav>
+  <aside class="sidebar" id="sidebar">
+    <section id="view-explorer">
+      <h3>Примеры</h3>
+      <div id="examples" class="tree"></div>
+      <h3>Хранилище <span class="actions"><button id="newfile" title="Новый файл">+</button><button id="refresh" title="Обновить">↻</button></span></h3>
+      <ul id="files" class="tree"><li class="empty">пусто</li></ul>
+    </section>
+    <section id="view-settings" hidden>
+      <h3>Доступ программы</h3>
+      <div class="settings">
+        <label><input type="checkbox" id="pfiles" checked> файлы в хранилище страницы</label>
+        <label><input type="checkbox" id="pnet" checked> сеть</label>
+        <div class="note">Снятая галочка — программа попросит разрешения.</div>
+      </div>
+      <h3>Сеть</h3>
+      <div class="settings">
+        <div class="field"><span>Прокси для сайтов без CORS (vladx serve)</span><input type="text" id="proxy" value="http://localhost:8000"></div>
+        <label><input type="checkbox" id="viaproxy"> все запросы через прокси</label>
+      </div>
+      <h3>ИИ для .vlhmn</h3>
+      <div class="settings">
+        <div class="field"><span>Сервер с ключом (vladx-llm.php или vladx serve)</span><input type="text" id="llmurl" placeholder="автоматически"></div>
+        <div class="note" id="llminfo">ищу сервер ИИ…</div>
+      </div>
+    </section>
+  </aside>
+  <main class="main">
+    <div class="tabs" id="tabs" role="tablist"></div>
     <div class="editor">
       <pre id="gutter" aria-hidden="true">1</pre>
-      <textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Код программы"></textarea>
-    </div>
-  </section>
-  <section class="side">
-    <div class="panel">
-      <h2>Вывод</h2>
-      <div id="output" aria-live="polite"></div>
-      <div id="lowconf" hidden>
-        <p id="lowtext"></p>
-        <div class="row"><button id="runanyway">Всё равно запустить</button><button id="refine">Уточню текст</button></div>
-      </div>
-      <div id="askpanel" hidden>
-        <p id="asktext"></p>
-        <div class="row"><button id="allow" class="primary">Разрешить и запустить</button><button id="deny">Не сейчас</button></div>
+      <div class="code-wrap">
+        <div id="curline"></div>
+        <pre id="hl" aria-hidden="true"></pre>
+        <textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="Код программы"></textarea>
       </div>
     </div>
-    <div class="panel">
-      <h2>Ввод для «спроси»</h2>
-      <textarea id="input" aria-label="Ответы для спроси" placeholder="по одному ответу на строку">Аня</textarea>
-    </div>
-    <div class="panel">
-      <h2>Доступ</h2>
-      <div class="perms">
-        <label><input type="checkbox" id="pfiles" checked> файлы</label>
-        <label><input type="checkbox" id="pnet" checked> сеть</label>
-        <label title="vladx serve: прокси для сети и ИИ для .vlhmn">сервер <input type="text" id="proxy" value="http://localhost:8000"></label>
-        <label><input type="checkbox" id="viaproxy"> через прокси</label>
-        <label title="Сервер с ключом ИИ для .vlhmn: vladx-llm.php на хостинге или vladx serve → /llm">ИИ <input type="text" id="llmurl" placeholder="автоматически"></label>
+    <div class="splitter" id="splitter" title="Потяните, чтобы изменить высоту"></div>
+    <section class="panel">
+      <div class="panel-tabs">
+        <button data-tab="terminal" class="active">Терминал</button>
+        <button data-tab="problems">Проблемы<span id="problem-count" class="badge">0</span></button>
+        <button data-tab="astview">AST</button>
+        <span class="spacer"></span>
+        <button id="clear" title="Очистить терминал">⌫</button>
       </div>
-    </div>
-    <div class="panel">
-      <h2>Файлы хранилища</h2>
-      <ul id="files"><li class="empty">пусто</li></ul>
-      <div class="row">
-        <input id="savename" placeholder="имя.vlstd" aria-label="Имя файла">
-        <button id="save">Сохранить редактор</button>
-        <button id="refresh" title="Обновить список">↻</button>
+      <div id="terminal" class="view term" aria-live="polite">
+        <div id="output"></div>
+        <div id="term-ask" hidden><span id="term-prompt"></span><input id="term-input" autocomplete="off" spellcheck="false" aria-label="Ответ программе"><span class="hint">Enter — ответить · Esc — прервать</span></div>
+        <div id="lowconf" class="card" hidden>
+          <p id="lowtext"></p>
+          <div class="row"><button id="runanyway" class="primary">Всё равно запустить</button><button id="refine">Уточню текст</button></div>
+        </div>
+        <div id="askpanel" class="card" hidden>
+          <p id="asktext"></p>
+          <div class="row"><button id="allow" class="primary">Разрешить и запустить</button><button id="deny">Не сейчас</button></div>
+        </div>
       </div>
-    </div>
-  </section>
-</main>
-<footer>Ядро — Rust, скомпилированный в WebAssembly; в странице нет реализации языка, только вызовы <code>vx_*</code>. Файлы живут в хранилище этой страницы (OPFS) между запусками.</footer>
+      <div id="problems" class="view" hidden><ul class="problems" id="problem-list"></ul></div>
+      <div id="astview" class="view" hidden><pre id="astpre">Нажмите AST, чтобы увидеть дерево программы.</pre></div>
+    </section>
+  </main>
+</div>
+<footer class="statusbar">
+  <span id="status">загрузка ядра…</span>
+  <button id="st-problems" title="Проблемы">✕ 0 ⚠ 0</button>
+  <span class="spacer"></span>
+  <span id="st-cursor">Стр 1, Кол 1</span>
+  <span id="st-lang" class="hide-narrow">ru</span>
+  <span id="st-fmt">.vlstd</span>
+  <span id="st-ai" class="hide-narrow"></span>
+  <span class="hide-narrow">UTF-8</span>
+</footer>
 
 <script type="text/plain" id="worker-src">
 'use strict';
@@ -202,7 +325,15 @@ function xhr(url) {
   return x.responseText;
 }
 function proxied(url) { return cfg.proxy.replace(/\/+$/, '') + '/fetch?url=' + encodeURIComponent(url); }
+const netCache = new Map();
 function httpGet(url) {
+  const key = (cfg.viaProxy ? 'p:' : 'd:') + url;
+  if (netCache.has(key)) return netCache.get(key);
+  const body = httpGetRaw(url);
+  netCache.set(key, body);
+  return body;
+}
+function httpGetRaw(url) {
   const proxyHint = 'Включите «через прокси» и запустите vladx serve (' + (cfg.proxy || 'http://localhost:8000') + ')';
   if (cfg.viaProxy) {
     if (!cfg.proxy) throw new Error('не указан адрес прокси');
@@ -313,13 +444,15 @@ async function handle(m) {
   }
   if (m.type === 'run' || m.type === 'run_ast') {
     if (!ex) await instantiate();
-    cfg = { proxy: m.proxy || '', viaProxy: !!m.viaProxy };
+    cfg = { proxy: m.proxy || '', viaProxy: !!m.viaProxy, llmUrl: cfg.llmUrl };
+    if (m.fresh) netCache.clear();
     await prepare();
     let res;
     try {
       ex.vx_reset_host();
       ex.vx_set_time(m.time);
-      const [ip, il] = put(m.input || ''); ex.vx_set_input(ip, il); ex.vx_free(ip, il);
+      const [ip, il] = put((m.answers || []).join('\n')); ex.vx_set_input(ip, il); ex.vx_free(ip, il);
+      ex.vx_set_interactive(1);
       ex.vx_set_permissions(m.perms);
       const [sp, sl] = put(m.code);
       const t0 = performance.now();
@@ -335,6 +468,12 @@ async function handle(m) {
     }
     release();
     res.asks = asks;
+    if (res.waiting) {
+      // Программа ждёт ответа: запись в хранилище откладывается до настоящего конца.
+      wbuf = new Map(); dels = new Set();
+      postMessage({ type: 'reply', id: m.id, result: res });
+      return;
+    }
     postMessage({ type: 'reply', id: m.id, result: res });
     try { await finalizeStore(); postMessage({ type: 'stored', files: await storedList() }); }
     catch (e) { postMessage({ type: 'stored', files: await storedList(), error: String((e && e.message) || e) }); }
@@ -406,130 +545,388 @@ onmessage = (ev) => {
 const WASM_B64 = "__WASM_B64__";
 const EXAMPLES = __EXAMPLES_JSON__;
 const LANGS = ['ru', 'it', 'scn'];
+const LANG_NAMES = ['ru — русский', 'it — italiano', 'scn — sicilianu'];
+const GLOBALS_HINT = 'numeri, testo, liste, mappe, caso, tempo, json, file, rete';
 const $ = id => document.getElementById(id);
+const code = $('code'), hl = $('hl'), gutter = $('gutter');
 let worker = null, reqId = 0, ready = false;
 const pending = new Map();
+const enc = new TextEncoder(), dec = new TextDecoder();
 
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function status(t) { $('status').textContent = t; }
+function fatal(html) { const b = $('banner'); b.innerHTML = html; b.hidden = false; status('ядро не запущено'); }
+function lang() { return Number($('lang').value); }
+function fmt() { return $('fmt').value; }
+
+// ════════════ ядро в странице: подсветка, проверка, формат (исполнение — в worker) ════════════
+let core = null;
+function coreCall(fn, text, ...args) {
+  const b = enc.encode(text); const p = core.vx_alloc(b.length);
+  new Uint8Array(core.memory.buffer, p, b.length).set(b);
+  const ok = core[fn](p, b.length, ...args);
+  const out = dec.decode(new Uint8Array(core.memory.buffer, core.vx_result_ptr(), core.vx_result_len()).slice());
+  core.vx_free(p, b.length);
+  return { ok, out };
+}
+async function bootCore(bytes) {
+  const noop = () => 0n;
+  const { instance } = await WebAssembly.instantiate(bytes, { env: {
+    vx_host_read: noop, vx_host_write: noop, vx_host_delete: noop, vx_host_list: noop, vx_host_get: noop, vx_host_llm: noop, vx_host_ask: () => 0 } });
+  core = instance.exports;
+}
+
+// ════════════ документы и вкладки ════════════
+let docs = [], cur = null, docSeq = 0;
+function docLabel(d) { return d.name + '.' + d.fmt; }
+function newDoc(o) { return Object.assign({ id: ++docSeq, name: 'без_имени', fmt: 'vlstd', lang: lang(), code: '', source: 'new', path: null, dirty: false, saved: '' }, o); }
+function saveDocs() {
+  store('vladx.docs', JSON.stringify(docs.map(d => ({ name: d.name, fmt: d.fmt, lang: d.lang, code: d.code, source: d.source, path: d.path, dirty: d.dirty, saved: d.saved }))));
+  store('vladx.cur', String(docs.indexOf(cur)));
+}
+function renderTabs() {
+  const bar = $('tabs'); bar.innerHTML = '';
+  for (const d of docs) {
+    const t = document.createElement('div');
+    t.className = 'tab' + (d === cur ? ' active' : '') + (d.dirty ? ' dirty' : '');
+    t.setAttribute('role', 'tab'); t.title = (d.path ? 'хранилище: ' + d.path : d.source === 'example' ? 'пример' : 'новый файл') + ' · ' + LANGS[d.lang];
+    const name = document.createElement('span'); name.textContent = docLabel(d);
+    const close = document.createElement('span'); close.className = 'close'; close.title = 'Закрыть';
+    close.onclick = e => { e.stopPropagation(); closeDoc(d); };
+    t.append(name, close); t.onclick = () => openDoc(d);
+    bar.appendChild(t);
+  }
+  renderExampleTree(); renderFileTree();
+}
+function openDoc(d) {
+  if (cur) { cur.code = code.value; cur.lang = lang(); }
+  if (!docs.includes(d)) docs.push(d);
+  cur = d;
+  $('lang').value = String(d.lang); $('fmt').value = d.fmt;
+  code.value = d.code; code.placeholder = d.fmt === 'vlhmn' ? 'Опишите программу словами. Код можно вставлять в блоки ``` … ```' : '';
+  code.scrollTop = 0; code.scrollLeft = 0;
+  refreshEditor(true); renderTabs(); updateStatusInfo(); saveDocs();
+}
+function closeDoc(d) {
+  if (d.dirty && !confirm('Закрыть «' + docLabel(d) + '» без сохранения?')) return;
+  const i = docs.indexOf(d); docs.splice(i, 1);
+  if (!docs.length) docs.push(newDoc({ lang: lang() }));
+  if (cur === d) { cur = null; openDoc(docs[Math.min(i, docs.length - 1)]); } else { renderTabs(); saveDocs(); }
+}
+function openExample(ex, l) {
+  const found = docs.find(d => d.source === 'example' && d.name === ex.name && d.lang === l);
+  if (found) { openDoc(found); return; }
+  const d = newDoc({ name: ex.name, fmt: ex.fmt || 'vlstd', lang: l, code: ex.code, source: 'example', saved: ex.code });
+  // Нетронутую вкладку примера заменяем, чтобы вкладки не копились.
+  if (cur && cur.source === 'example' && !cur.dirty) { docs[docs.indexOf(cur)] = d; cur = null; }
+  openDoc(d);
+}
+function markDirty() {
+  if (!cur) return;
+  cur.code = code.value;
+  const dirty = cur.code !== cur.saved;
+  if (dirty !== cur.dirty) { cur.dirty = dirty; renderTabs(); }
+  saveDocs();
+}
+
+// ════════════ редактор: подсветка, номера строк, проблемы ════════════
+let liveDiags = [], runDiags = [], checkTimer = null;
+function renderHighlight() {
+  const text = code.value;
+  const lines = text.split('\n');
+  const kinds = lines.map(l => new Array([...l].length).fill(''));
+  const marks = lines.map(l => new Array([...l].length).fill(''));
+  let lexErr = null;
+  if (core && fmt() === 'vlstd') {
+    const r = JSON.parse(coreCall('vx_tokens', text, lang()).out);
+    for (const [ln, col, len, kind] of r.t) {
+      const row = kinds[ln - 1]; if (!row) continue;
+      for (let i = col - 1; i < col - 1 + len && i < row.length; i++) row[i] = kind;
+    }
+    lexErr = r.e;
+    if (lexErr && kinds[lexErr.line - 1]) {
+      const row = kinds[lexErr.line - 1];
+      for (let i = lexErr.col - 1; i < row.length; i++) row[i] = lexErr.code === 'E-LEX-001' ? 'str' : row[i];
+    }
+  } else if (fmt() === 'vlhmn') {
+    // В тексте для ИИ подсвечиваются только блоки кода ```…```.
+    let inCode = false;
+    lines.forEach((l, i) => { if (/^\s*```/.test(l)) { inCode = !inCode; kinds[i].fill('com'); } else if (!inCode) kinds[i].fill('prose'); });
+  }
+  // Интерполяция внутри строк: {имя}
+  lines.forEach((l, i) => {
+    const ch = [...l]; let inStr = false;
+    for (let j = 0; j < ch.length; j++) {
+      if (kinds[i][j] !== 'str') { inStr = false; continue; }
+      if (ch[j] === '{' && ch[j - 1] !== '\\') { let k = j; while (k < ch.length && ch[k] !== '}' && kinds[i][k] === 'str') k++; for (let m = j; m <= k && m < ch.length; m++) kinds[i][m] = 'hole'; j = k; }
+    }
+  });
+  for (const d of [...liveDiags, ...runDiags]) {
+    if (!d.line || !marks[d.line - 1]) continue;
+    const row = marks[d.line - 1]; const cls = d.severity === 'warning' ? 'warn' : 'err';
+    const from = Math.max(0, d.col - 1), to = Math.min(row.length, from + Math.max(1, d.len || 1));
+    if (from >= row.length) { if (row.length) row[row.length - 1] = cls; continue; }
+    for (let i = from; i < to; i++) if (row[i] !== 'err') row[i] = cls;
+  }
+  let html = '';
+  lines.forEach((l, i) => {
+    const ch = [...l]; let j = 0;
+    while (j < ch.length) {
+      const k = kinds[i][j], m = marks[i][j]; let e = j;
+      while (e < ch.length && kinds[i][e] === k && marks[i][e] === m) e++;
+      const cls = (k ? 'k-' + k : '') + (m ? ' d-' + m : '');
+      const t = esc(ch.slice(j, e).join(''));
+      html += cls ? '<span class="' + cls.trim() + '">' + t + '</span>' : t;
+      j = e;
+    }
+    html += '\n';
+  });
+  hl.innerHTML = html + ' ';
+  syncScroll();
+}
+function renderGutter() {
+  const n = code.value.split('\n').length;
+  let s = ''; for (let i = 1; i <= n; i++) s += i + '\n';
+  gutter.textContent = s;
+}
+function syncScroll() {
+  hl.scrollTop = code.scrollTop; hl.scrollLeft = code.scrollLeft; gutter.scrollTop = code.scrollTop;
+  updateCursor();
+}
+function updateCursor() {
+  const before = code.value.slice(0, code.selectionStart);
+  const line = before.split('\n').length, col = [...before.slice(before.lastIndexOf('\n') + 1)].length + 1;
+  $('st-cursor').textContent = 'Стр ' + line + ', Кол ' + col;
+  $('curline').style.top = (10 + (line - 1) * 21 - code.scrollTop) + 'px';
+}
+function liveCheck() {
+  if (!core || fmt() !== 'vlstd') { liveDiags = []; renderProblems(); return; }
+  liveDiags = JSON.parse(coreCall('vx_check', code.value, lang()).out).diagnostics;
+  renderProblems(); renderHighlight();
+}
+function refreshEditor(immediate) {
+  renderGutter(); renderHighlight();
+  clearTimeout(checkTimer);
+  if (immediate) liveCheck(); else checkTimer = setTimeout(liveCheck, 300);
+}
+function renderProblems() {
+  const all = [...liveDiags];
+  for (const d of runDiags) if (!all.some(x => x.code === d.code && x.line === d.line && x.col === d.col)) all.push(d);
+  const errs = all.filter(d => d.severity !== 'warning').length, warns = all.length - errs;
+  const badge = $('problem-count'); badge.textContent = all.length; badge.className = 'badge' + (errs ? ' err' : '');
+  $('st-problems').textContent = '✕ ' + errs + ' ⚠ ' + warns;
+  const ul = $('problem-list'); ul.innerHTML = '';
+  if (!all.length) { ul.innerHTML = '<li class="empty">Проблем нет.</li>'; return; }
+  for (const d of all) {
+    const li = document.createElement('li');
+    li.innerHTML = '<span class="sev ' + (d.severity === 'warning' ? 'warning">⚠' : 'error">✕') + '</span><span>' + esc(d.message) +
+      (d.hint ? ' <span class="code">— ' + esc(d.hint) + '</span>' : '') + '</span><span class="code">' + esc(d.code) + '</span><span class="where">' + (d.line ? 'стр ' + d.line + ':' + d.col : '') + '</span>';
+    if (d.line) li.onclick = () => gotoPos(d.line, d.col);
+    ul.appendChild(li);
+  }
+}
+function gotoPos(line, col) {
+  const lines = code.value.split('\n'); let pos = 0;
+  for (let i = 0; i < line - 1 && i < lines.length; i++) pos += lines[i].length + 1;
+  pos += Math.max(0, (col || 1) - 1);
+  code.focus(); code.setSelectionRange(pos, pos);
+  code.scrollTop = Math.max(0, (line - 5) * 21); syncScroll();
+}
+code.addEventListener('input', () => { runDiags = []; markDirty(); refreshEditor(false); });
+code.addEventListener('scroll', syncScroll);
+['keyup', 'click', 'select'].forEach(ev => code.addEventListener(ev, updateCursor));
+code.addEventListener('keydown', e => {
+  if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey) {
+    e.preventDefault(); code.setRangeText('  ', code.selectionStart, code.selectionEnd, 'end'); code.dispatchEvent(new Event('input'));
+  } else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+    // Автоотступ: как у предыдущей строки, +2 после «{».
+    const before = code.value.slice(0, code.selectionStart);
+    const lineStart = before.lastIndexOf('\n') + 1, curLine = before.slice(lineStart);
+    let indent = (curLine.match(/^\s*/) || [''])[0];
+    if (/\{\s*$/.test(curLine)) indent += '  ';
+    e.preventDefault(); code.setRangeText('\n' + indent, code.selectionStart, code.selectionEnd, 'end'); code.dispatchEvent(new Event('input'));
+  } else if (e.key === '}' ) {
+    // «}» в начале строки — убрать лишний отступ.
+    const before = code.value.slice(0, code.selectionStart); const lineStart = before.lastIndexOf('\n') + 1;
+    if (/^\s+$/.test(before.slice(lineStart)) && before.length - lineStart >= 2) {
+      e.preventDefault(); code.setRangeText('}', code.selectionStart - 2, code.selectionEnd, 'end'); code.dispatchEvent(new Event('input'));
+    }
+  }
+});
+
+// ════════════ дерево примеров и хранилища ════════════
+const closedGroups = new Set(JSON.parse(load('vladx.closed') || '[]'));
+function renderExampleTree() {
+  const box = $('examples'); box.innerHTML = '';
+  LANGS.forEach((l, li) => {
+    const list = EXAMPLES[l] || []; if (!list.length) return;
+    const g = document.createElement('div'); g.className = 'group' + (closedGroups.has(l) ? ' closed' : ''); g.textContent = LANG_NAMES[li];
+    g.onclick = () => { closedGroups.has(l) ? closedGroups.delete(l) : closedGroups.add(l); store('vladx.closed', JSON.stringify([...closedGroups])); renderExampleTree(); };
+    box.appendChild(g);
+    if (closedGroups.has(l)) return;
+    const ul = document.createElement('ul'); ul.className = 'tree';
+    for (const ex of list) {
+      const item = document.createElement('li');
+      if (cur && cur.source === 'example' && cur.name === ex.name && cur.lang === li) item.className = 'current';
+      item.innerHTML = '<span class="ico">' + (ex.fmt === 'vlhmn' ? '✦' : '◇') + '</span><span></span>';
+      item.lastChild.textContent = ex.name + '.' + (ex.fmt || 'vlstd');
+      item.title = ex.fmt === 'vlhmn' ? 'текст, который переводит ИИ' : 'пример кода';
+      item.onclick = () => { openExample(ex, li); closeSide(); };
+      ul.appendChild(item);
+    }
+    box.appendChild(ul);
+  });
+}
+let storedFiles = [];
+function renderFileTree() {
+  const ul = $('files'); ul.innerHTML = '';
+  if (!storedFiles.length) { ul.innerHTML = '<li class="empty">пусто — сохраните файл (Ctrl+S) или создайте его программой: file.запиши</li>'; return; }
+  for (const f of storedFiles) {
+    const li = document.createElement('li');
+    if (cur && cur.path === f) li.className = 'current';
+    const ico = document.createElement('span'); ico.className = 'ico'; ico.textContent = /\.vl(std|hmn)$/.test(f) ? '◇' : '▤';
+    const name = document.createElement('span'); name.textContent = f; name.title = f;
+    const dl = document.createElement('button'); dl.textContent = '⤓'; dl.title = 'Скачать';
+    const del = document.createElement('button'); del.textContent = '✕'; del.title = 'Удалить';
+    dl.onclick = async e => {
+      e.stopPropagation();
+      const r = await call({ type: 'fs', op: 'read', path: f });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([r.text], { type: 'text/plain;charset=utf-8' }));
+      a.download = f.split('/').pop(); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    };
+    del.onclick = async e => {
+      e.stopPropagation(); if (!confirm('Удалить «' + f + '» из хранилища?')) return;
+      const r = await call({ type: 'fs', op: 'delete', path: f }); storedFiles = r.files; renderFileTree();
+    };
+    li.append(ico, name, dl, del);
+    li.onclick = async () => {
+      const open = docs.find(d => d.path === f); if (open) { openDoc(open); closeSide(); return; }
+      const r = await call({ type: 'fs', op: 'read', path: f });
+      const m = f.match(/^(.*?)(?:\.(vlstd|vlhmn))?$/);
+      openDoc(newDoc({ name: m[1], fmt: m[2] || 'vlstd', lang: lang(), code: r.text, source: 'storage', path: f, saved: r.text }));
+      closeSide();
+    };
+    ul.appendChild(li);
+  }
+}
+async function refreshFiles() {
+  try { const r = await call({ type: 'fs', op: 'list' }); storedFiles = r.files; renderFileTree(); }
+  catch (e) { $('files').innerHTML = '<li class="empty">' + esc(e.message || e) + '</li>'; }
+}
+async function saveCurrent() {
+  if (!cur || !ready) return;
+  let path = cur.path;
+  if (!path) {
+    path = prompt('Имя файла в хранилище страницы:', docLabel(cur));
+    if (!path) return;
+  }
+  try {
+    const r = await call({ type: 'fs', op: 'write', path, text: code.value });
+    storedFiles = r.files;
+    const m = path.match(/^(.*?)(?:\.(vlstd|vlhmn))?$/);
+    Object.assign(cur, { path, source: 'storage', name: m[1], saved: code.value, dirty: false, code: code.value });
+    renderTabs(); saveDocs(); status('сохранено: ' + path);
+  } catch (e) { status('не сохранено: ' + (e.message || e)); }
+}
+$('refresh').onclick = refreshFiles;
+$('newfile').onclick = () => { openDoc(newDoc({ lang: lang(), fmt: fmt() })); code.focus(); };
+
+// ════════════ панели ════════════
+function showPanel(tab) {
+  for (const b of document.querySelectorAll('.panel-tabs > button[data-tab]')) b.classList.toggle('active', b.dataset.tab === tab);
+  for (const id of ['terminal', 'problems', 'astview']) $(id).hidden = id !== tab;
+}
+for (const b of document.querySelectorAll('.panel-tabs > button[data-tab]')) b.onclick = () => showPanel(b.dataset.tab);
+$('st-problems').onclick = () => showPanel('problems');
+$('clear').onclick = () => { $('output').innerHTML = ''; };
+function showSideView(v) {
+  $('view-explorer').hidden = v !== 'explorer'; $('view-settings').hidden = v !== 'settings';
+  $('act-explorer').classList.toggle('active', v === 'explorer'); $('act-settings').classList.toggle('active', v === 'settings');
+}
+$('act-explorer').onclick = () => showSideView('explorer');
+$('act-settings').onclick = () => showSideView('settings');
+$('menu-btn').onclick = () => document.body.classList.toggle('side-open');
+function closeSide() { document.body.classList.remove('side-open'); }
+// Высота нижней панели — перетаскиванием.
+(() => {
+  const sp = $('splitter'), main = document.querySelector('.main');
+  const saved = load('vladx.panelh'); if (saved) main.style.setProperty('--panel-h', saved);
+  sp.addEventListener('pointerdown', e => {
+    sp.classList.add('drag'); sp.setPointerCapture(e.pointerId);
+    const move = ev => {
+      const r = main.getBoundingClientRect();
+      const h = Math.min(r.height - 120, Math.max(80, r.bottom - ev.clientY));
+      main.style.setProperty('--panel-h', h + 'px');
+    };
+    sp.onpointermove = move;
+    sp.onpointerup = () => { sp.onpointermove = null; sp.classList.remove('drag'); store('vladx.panelh', main.style.getPropertyValue('--panel-h')); };
+  });
+})();
+function updateStatusInfo() {
+  $('st-lang').textContent = LANG_NAMES[lang()];
+  $('st-fmt').textContent = '.' + fmt();
+}
+
+// ════════════ worker ════════════
 function call(msg) {
   return new Promise((resolve, reject) => {
     const id = ++reqId; pending.set(id, { resolve, reject });
     worker.postMessage({ ...msg, id });
   });
 }
-function status(t) { $('status').textContent = t; }
-function fatal(html) { const b = $('banner'); b.innerHTML = html; b.hidden = false; status('ядро не запущено'); }
-function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
-function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
-function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
-
-// ── редактор ──
-const code = $('code'), gutter = $('gutter');
-function syncGutter() {
-  const n = code.value.split('\n').length;
-  let s = ''; for (let i = 1; i <= n; i++) s += i + '\n';
-  gutter.textContent = s; gutter.scrollTop = code.scrollTop;
-}
-function fmt() { return $('fmt').value; }
-function codeKey() { return 'vladx.code.' + lang() + '.' + fmt(); }
-code.addEventListener('input', () => { syncGutter(); store(codeKey(), code.value); });
-code.addEventListener('scroll', () => { gutter.scrollTop = code.scrollTop; });
-code.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); run(); return; }
-  if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); code.setRangeText('  ', code.selectionStart, code.selectionEnd, 'end'); syncGutter(); }
-});
-function gotoLine(line) {
-  const lines = code.value.split('\n'); let pos = 0;
-  for (let i = 0; i < line - 1 && i < lines.length; i++) pos += lines[i].length + 1;
-  code.focus(); code.setSelectionRange(pos, pos + (lines[line - 1] || '').length);
-  code.scrollTop = Math.max(0, (line - 4) * 21.7);
+function startWorker() {
+  worker = new Worker(URL.createObjectURL(new Blob([$('worker-src').textContent], { type: 'text/javascript' })));
+  worker.onmessage = ev => {
+    const m = ev.data;
+    if (m.type === 'stored') { storedFiles = m.files || []; renderFileTree(); return; }
+    const p = pending.get(m.id); if (!p) return; pending.delete(m.id);
+    if (m.type === 'error') p.reject(new Error(m.message)); else p.resolve(m);
+  };
+  worker.onerror = e => fatal('Ошибка фонового потока: ' + esc(e.message || e));
+  return call({ type: 'boot', wasm: WASM_B64 });
 }
 
-// ── примеры ──
-function lang() { return Number($('lang').value); }
-function renderChips(activeName) {
-  const nav = $('chips'); nav.innerHTML = '';
-  for (const ex of EXAMPLES[LANGS[lang()]] || []) {
-    const b = document.createElement('button');
-    b.textContent = ex.name.replace(/^\d+-/, ''); b.title = ex.name;
-    if (ex.name === activeName) b.className = 'active';
-    if (ex.fmt === 'vlhmn') b.textContent += ' ✦';
-    if (ex.fmt === 'vlhmn') b.title = ex.name + '.vlhmn — текст, который переводит ИИ';
-    b.onclick = () => { setFmt(ex.fmt || 'vlstd'); setCode(ex.code); renderChips(ex.name); run(); };
-    nav.appendChild(b);
-  }
-}
-function setCode(t) { code.value = t; syncGutter(); store(codeKey(), t); }
-function setFmt(f) {
-  $('fmt').value = f;
-  code.placeholder = f === 'vlhmn' ? 'Опишите программу словами. Код можно вставлять в блоки ``` … ```' : '';
-}
-function firstExample() { return (EXAMPLES[LANGS[lang()]] || []).find(e => (e.fmt || 'vlstd') === fmt()); }
-$('fmt').addEventListener('change', () => {
-  setFmt(fmt());
-  const saved = load(codeKey()); const first = firstExample();
-  setCode(saved || (first ? first.code : ''));
-  renderChips(saved ? null : first && first.name);
-});
-$('tolang').addEventListener('change', async () => {
-  const to = Number($('tolang').value); $('tolang').value = '';
-  if (!ready || isNaN(to) || fmt() !== 'vlstd') { if (fmt() !== 'vlstd') status('переводить можно код .vlstd'); return; }
-  const r = await call({ type: 'format', code: code.value, from: lang(), to });
-  if (!r.ok) { renderResult(Object.assign({ stdout: [] }, JSON.parse(r.text))); status('перевод не удался'); return; }
-  $('lang').value = String(to); store('vladx.lang', String(to));
-  setCode(r.text); renderChips(null); status('переведено на ' + LANGS[to]);
-});
-$('lang').addEventListener('change', () => {
-  store('vladx.lang', String(lang()));
-  const saved = load(codeKey());
-  const first = firstExample();
-  setCode(saved || (first ? first.code : ''));
-  renderChips(saved ? null : first && first.name);
-  if (ready) run();
-});
-
-// ── вывод ──
-function renderResult(r) {
+// ════════════ терминал ════════════
+function termLine(text, cls) { const d = document.createElement('div'); d.className = 'line' + (cls ? ' ' + cls : ''); d.textContent = text; return d; }
+function renderResult(r, opts) {
   const out = $('output'); out.innerHTML = '';
-  const src = (r.vlstd != null ? r.vlstd : code.value).split('\n');
+  out.appendChild(termLine('$ vladx run ' + (cur ? docLabel(cur) : 'программа') + (lang() ? ' --lang ' + LANGS[lang()] : ''), 'cmd'));
   if (r.interp) out.appendChild(r.interp);
-  for (const line of r.stdout || []) { const d = document.createElement('div'); d.textContent = line; out.appendChild(d); }
-  for (const w of r.warnings || []) { const d = document.createElement('div'); d.className = 'warn'; d.textContent = 'предупреждение ' + w; out.appendChild(d); }
+  const src = (r.vlstd != null ? r.vlstd : code.value).split('\n');
+  for (const line of r.stdout || []) out.appendChild(termLine(line));
+  for (const w of r.warnings || []) out.appendChild(termLine('предупреждение ' + w, 'warn'));
+  runDiags = [];
   for (const g of r.diagnostics || []) {
     const d = document.createElement('div'); d.className = 'diag';
-    let html = '<b>' + esc(g.code) + '</b>' + (g.line ? '  строка ' + g.line + ', колонка ' + g.col : '') + '\n' + esc(g.message);
+    let t = (g.line ? 'стр ' + g.line + ':' + g.col + '  ' : '') + g.code + '  ' + g.message;
+    d.textContent = t;
     if (g.line && src[g.line - 1] != null) {
-      html += '<div class="src">' + esc(g.line + ' | ' + src[g.line - 1]) + '\n' +
-        esc(' '.repeat(String(g.line).length) + ' | ' + ' '.repeat(Math.max(0, g.col - 1)) + '^'.repeat(Math.max(1, g.len))) + '</div>';
+      const s = document.createElement('div'); s.className = 'src';
+      s.textContent = '  ' + g.line + ' │ ' + src[g.line - 1] + '\n  ' + ' '.repeat(String(g.line).length) + ' │ ' + ' '.repeat(Math.max(0, g.col - 1)) + '^'.repeat(Math.max(1, g.len));
+      d.appendChild(s);
     }
-    if (g.hint) html += '<div class="hint">подсказка: ' + esc(g.hint) + '</div>';
-    d.innerHTML = html; if (g.line && r.vlstd == null) d.onclick = () => gotoLine(g.line);
+    if (g.hint) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = '  подсказка: ' + g.hint; d.appendChild(h); }
+    if (g.line && r.vlstd == null) d.onclick = () => gotoPos(g.line, g.col);
     out.appendChild(d);
+    if (r.vlstd == null && g.line) runDiags.push(Object.assign({ severity: 'error' }, g));
   }
-  if (r.storeError) { const d = document.createElement('div'); d.className = 'warn'; d.textContent = 'файлы не сохранены в хранилище: ' + r.storeError; out.appendChild(d); }
-  const m = document.createElement('div'); m.className = 'meta';
-  m.textContent = (r.ok ? 'готово' : 'остановлено с ошибкой') + (r.ms != null ? ' · ' + r.ms.toFixed(1) + ' мс' : '');
-  out.appendChild(m);
+  if (r.storeError) out.appendChild(termLine('файлы не сохранены в хранилище: ' + r.storeError, 'warn'));
+  if (!(opts && opts.waiting)) {
+    const m = document.createElement('div');
+    m.className = 'meta ' + (r.ok ? 'ok' : 'bad');
+    m.textContent = (r.ok ? '✓ готово' : '✗ остановлено с ошибкой') + (r.ms != null ? ' · ' + r.ms.toFixed(1) + ' мс' : '');
+    out.appendChild(m);
+  }
+  renderProblems(); renderHighlight();
+  if (runDiags.length || (r.diagnostics || []).length) showPanel('terminal');
+  $('terminal').scrollTop = $('terminal').scrollHeight;
 }
 
-// ── «просьба вместо отказа» ──
-const ASK_TEXT = { files: 'файлы в хранилище страницы', net: 'сеть (запросы к другим сайтам)' };
-let askKinds = [];
-function showAsk(kinds) {
-  askKinds = kinds;
-  $('asktext').textContent = 'Программа просит доступ: ' + kinds.map(k => ASK_TEXT[k]).join(' и ') + '.';
-  $('askpanel').hidden = false;
-}
-$('allow').onclick = () => {
-  for (const k of askKinds) $(k === 'files' ? 'pfiles' : 'pnet').checked = true;
-  $('askpanel').hidden = true; run(pendingAst && fmt() === 'vlhmn' ? true : undefined);
-};
-$('deny').onclick = () => { $('askpanel').hidden = true; status('доступ отклонён'); };
-
-// ── .vlhmn: перевод на сервере (там ключ ИИ), исполнение — здесь, в ядре ──
+// ════════════ .vlhmn: перевод в ядре, запросы к модели — на сервер с ключом ════════════
 const MIN_CONFIDENCE = 0.8;
-let pendingAst = null;
 function serverBase() { return ($('proxy').value.trim() || location.origin).replace(/\/+$/, ''); }
-// Сервер ИИ: из поля «ИИ», иначе vladx-llm.php рядом со страницей, иначе vladx serve → /llm.
 let llmCache = null;
 async function llmInfo() {
   const typed = $('llmurl').value.trim();
@@ -544,10 +941,16 @@ async function llmInfo() {
       if (typeof i.available === 'boolean') { llmCache = { typed, url, model: i.model || '', available: i.available, reason: i.reason }; return llmCache; }
     } catch (e) { /* следующий вариант */ }
   }
-  llmCache = { typed, url: '', model: '', available: false, reason: typed ? 'сервер ИИ ' + typed + ' не отвечает' : 'сервер ИИ не найден (vladx-llm.php или vladx serve → /llm)' };
+  llmCache = { typed, url: '', model: '', available: false, reason: typed ? 'сервер ИИ ' + typed + ' не отвечает' : 'сервер ИИ не найден (vladx-llm.php рядом со страницей или vladx serve → /llm)' };
   return llmCache;
 }
-$('llmurl').addEventListener('change', () => { llmCache = null; });
+function showLlmInfo(i) {
+  $('fmt').options[1].textContent = '.vlhmn — текст для ИИ' + (i.available ? '' : ' (ИИ не найден)');
+  $('fmt').title = i.available ? 'ИИ: ' + i.model + ' через ' + i.url : (i.reason || '');
+  $('llminfo').textContent = i.available ? 'Найден: ' + i.url.replace(location.origin, '') + ' · модель ' + i.model : i.reason;
+  $('st-ai').textContent = i.available ? 'ИИ: ' + i.model.replace(/^.*\//, '') : 'ИИ: нет';
+}
+$('llmurl').addEventListener('change', () => { llmCache = null; llmInfo().then(showLlmInfo); });
 function interpBlock(t) {
   const box = document.createElement('div'); box.className = 'interp';
   const head = document.createElement('div'); head.className = 'head';
@@ -562,7 +965,6 @@ function interpBlock(t) {
 async function translateHmn() {
   status('ИИ переводит текст…');
   const info = await llmInfo();
-  // Перевод делает ядро в WASM; к серверу ИИ оно обращается, только если в тексте есть проза.
   const r = await call({ type: 'translate', code: code.value, lang: lang(), llmUrl: info.available ? info.url : '', model: info.model });
   const t = r.result;
   if (!t.ok) {
@@ -572,14 +974,23 @@ async function translateHmn() {
   return { t };
 }
 
-// ── запуск ──
-let running = false;
+// ════════════ запуск и интерактивный «спроси» ════════════
+// Ядро синхронное: на «спроси» без ответа программа останавливается, человек
+// отвечает в терминале, и программа запускается заново со всеми ответами.
+// Время, случайности и ответы сети в пределах сеанса те же; запись в
+// хранилище происходит только при настоящем завершении.
+let running = false, session = null, pendingAst = null;
+function setRunning(on, label) {
+  running = on; $('run').disabled = on || !ready; $('stop').disabled = !on && !session;
+  if (label) status(label);
+}
 async function run(force) {
   if (!ready || running) return;
-  running = true; $('askpanel').hidden = true; $('lowconf').hidden = true; status('выполняется…');
-  const perms = ($('pfiles').checked ? 1 : 0) | ($('pnet').checked ? 2 : 0);
+  $('askpanel').hidden = true; $('lowconf').hidden = true; $('term-ask').hidden = true;
+  showPanel('terminal');
+  setRunning(true, 'выполняется…');
+  let msgBase, interp = null;
   try {
-    let interp = null, msg;
     if (fmt() === 'vlhmn') {
       let t = force === true ? pendingAst : null;
       if (!t) {
@@ -587,112 +998,189 @@ async function run(force) {
         if (tr.error) { renderResult(tr.error); status('перевод не удался'); return; }
         t = tr.t;
       }
+      pendingAst = t;
       interp = interpBlock(t);
+      $('astpre').textContent = JSON.stringify(t.program, null, 2);
       if (force !== true && t.confidence < MIN_CONFIDENCE) {
-        pendingAst = t;
-        renderResult({ ok: false, stdout: [], interp, vlstd: t.vlstd });
+        renderResult({ ok: false, stdout: [], interp, vlstd: t.vlstd }, { waiting: true });
         $('lowtext').textContent = 'ИИ не уверен, что понял текст правильно (' + Number(t.confidence).toFixed(2) + ' < ' + MIN_CONFIDENCE + '). Уточните текст или запустите как есть.';
         $('lowconf').hidden = false; status('нужно уточнение');
         return;
       }
-      pendingAst = t;
-      msg = { type: 'run_ast', code: JSON.stringify(t.program) };
+      msgBase = { type: 'run_ast', code: JSON.stringify(t.program) };
     } else {
-      msg = { type: 'run', code: code.value, lang: lang() };
+      msgBase = { type: 'run', code: code.value, lang: lang() };
     }
-    const r = await call(Object.assign(msg, {
-      perms, input: $('input').value,
+    session = { msgBase, interp, answers: [], time: Date.now() - new Date().getTimezoneOffset() * 60000 };
+  } finally {
+    if (!session) setRunning(false);
+  }
+  await step();
+}
+async function step() {
+  if (!session) return;
+  setRunning(true, 'выполняется…');
+  const s = session;
+  try {
+    const r = await call(Object.assign({}, s.msgBase, {
+      perms: ($('pfiles').checked ? 1 : 0) | ($('pnet').checked ? 2 : 0),
+      answers: s.answers, fresh: s.answers.length === 0, time: s.time,
       proxy: $('proxy').value.trim(), viaProxy: $('viaproxy').checked,
-      time: Date.now() - new Date().getTimezoneOffset() * 60000,
     }));
-    r.result.interp = interp;
+    if (session !== s) return;
+    r.result.interp = s.interp;
+    if (r.result.waiting) {
+      renderResult(r.result, { waiting: true });
+      $('term-prompt').textContent = r.result.waiting.prompt;
+      $('term-ask').hidden = false; $('term-input').value = '';
+      $('terminal').appendChild($('term-ask'));
+      setTimeout(() => $('term-input').focus(), 0);
+      $('terminal').scrollTop = $('terminal').scrollHeight;
+      running = false; $('run').disabled = false; $('stop').disabled = false;
+      status('ждёт ввода');
+      return;
+    }
+    session = null;
     renderResult(r.result);
     status(r.result.ok ? 'готово' : 'ошибка');
     if (r.result.asks && r.result.asks.length) showAsk(r.result.asks);
-  } catch (e) { renderResult({ ok: false, stdout: [], diagnostics: [{ code: 'E-INTERNAL', message: String(e) }] }); status('ошибка'); }
-  finally { running = false; }
+  } catch (e) {
+    if (session !== s) return;
+    session = null;
+    renderResult({ ok: false, stdout: [], diagnostics: [{ code: 'E-INTERNAL', message: String(e.message || e) }] });
+    status('ошибка');
+  } finally {
+    if (!session) setRunning(false);
+  }
+}
+const termHistory = [];
+let histPos = 0;
+$('term-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    if (!session) return;
+    const v = $('term-input').value;
+    termHistory.push(v); histPos = termHistory.length;
+    session.answers.push(v);
+    $('term-ask').hidden = true;
+    step();
+  } else if (e.key === 'Escape') {
+    stop('ввод прерван');
+  } else if (e.key === 'ArrowUp' && histPos > 0) {
+    e.preventDefault(); $('term-input').value = termHistory[--histPos];
+  } else if (e.key === 'ArrowDown' && histPos < termHistory.length) {
+    e.preventDefault(); histPos++; $('term-input').value = termHistory[histPos] || '';
+  }
+});
+async function stop(why) {
+  const wasRunning = running;
+  session = null;
+  $('term-ask').hidden = true;
+  if (wasRunning) {
+    // Синхронное ядро не прервать изнутри: worker пересоздаётся.
+    worker.terminate();
+    for (const p of pending.values()) p.reject(new Error('остановлено'));
+    pending.clear();
+    ready = false;
+    try { await startWorker(); ready = true; } catch (e) { fatal('Не удалось перезапустить ядро: ' + esc(e.message || e)); }
+  }
+  setRunning(false);
+  $('output').appendChild(termLine('■ ' + (why || 'остановлено'), 'meta bad'));
+  status(why || 'остановлено');
 }
 $('run').onclick = () => run();
+$('stop').onclick = () => stop();
 $('runanyway').onclick = () => { $('lowconf').hidden = true; run(true); };
 $('refine').onclick = () => { $('lowconf').hidden = true; code.focus(); status('уточните текст и запустите снова'); };
+
+// «Просьба вместо отказа»: доступ сужен, а программа его просит.
+const ASK_TEXT = { files: 'файлы в хранилище страницы', net: 'сеть (запросы к другим сайтам)' };
+let askKinds = [];
+function showAsk(kinds) {
+  askKinds = kinds;
+  $('asktext').textContent = 'Программа просит доступ: ' + kinds.map(k => ASK_TEXT[k]).join(' и ') + '.';
+  $('askpanel').hidden = false; $('terminal').appendChild($('askpanel'));
+}
+$('allow').onclick = () => {
+  for (const k of askKinds) $(k === 'files' ? 'pfiles' : 'pnet').checked = true;
+  $('askpanel').hidden = true; run(pendingAst && fmt() === 'vlhmn' ? true : undefined);
+};
+$('deny').onclick = () => { $('askpanel').hidden = true; status('доступ отклонён'); };
+
+// ════════════ формат, перевод, AST ════════════
+function formatCode(to) {
+  if (fmt() !== 'vlstd') { status('форматировать и переводить можно код .vlstd'); return false; }
+  const r = coreCall('vx_format', code.value, lang(), to);
+  if (!r.ok) { renderResult(Object.assign({ stdout: [] }, JSON.parse(r.out))); status(to === lang() ? 'не отформатировано' : 'перевод не удался'); return false; }
+  code.value = r.out; code.dispatchEvent(new Event('input'));
+  return true;
+}
+$('format').onclick = () => { if (formatCode(lang())) status('отформатировано'); };
+$('tolang').addEventListener('change', () => {
+  const to = Number($('tolang').value); $('tolang').value = '';
+  if (!core || isNaN(to)) return;
+  if (formatCode(to)) { $('lang').value = String(to); if (cur) cur.lang = to; saveDocs(); updateStatusInfo(); refreshEditor(true); status('переведено на ' + LANGS[to]); }
+});
 $('ast').onclick = async () => {
+  showPanel('astview');
   if (fmt() === 'vlhmn') {
     const tr = await translateHmn();
     if (tr.error) { renderResult(tr.error); status('перевод не удался'); return; }
-    const out = $('output'); out.innerHTML = ''; out.appendChild(interpBlock(tr.t));
-    const pre = document.createElement('pre'); pre.textContent = JSON.stringify(tr.t.program, null, 2); out.appendChild(pre); status('AST');
-    return;
+    $('astpre').textContent = JSON.stringify(tr.t.program, null, 2); status('AST'); return;
   }
-  const r = await call({ type: 'parse', code: code.value, lang: lang() });
-  if (r.ok) { const out = $('output'); out.innerHTML = ''; const pre = document.createElement('pre'); pre.textContent = r.text; out.appendChild(pre); status('AST'); }
-  else { renderResult(Object.assign({ stdout: [] }, JSON.parse(r.text))); status('ошибка разбора'); }
+  const r = coreCall('vx_parse', code.value, lang());
+  if (r.ok) { $('astpre').textContent = r.out; status('AST'); }
+  else { const j = JSON.parse(r.out); $('astpre').textContent = j.diagnostics.map(d => d.code + '  ' + d.message).join('\n'); status('ошибка разбора'); }
 };
+$('lang').addEventListener('change', () => { if (cur) { cur.lang = lang(); saveDocs(); } updateStatusInfo(); refreshEditor(true); });
+$('fmt').addEventListener('change', () => {
+  if (cur) { cur.fmt = fmt(); saveDocs(); renderTabs(); }
+  code.placeholder = fmt() === 'vlhmn' ? 'Опишите программу словами. Код можно вставлять в блоки ``` … ```' : '';
+  updateStatusInfo(); refreshEditor(true);
+});
 
-// ── файлы хранилища ──
-function renderFiles(list) {
-  const ul = $('files'); ul.innerHTML = '';
-  if (!list.length) { ul.innerHTML = '<li class="empty">пусто — программа может создать файл через file.запиши</li>'; return; }
-  for (const f of list) {
-    const li = document.createElement('li');
-    const name = document.createElement('span'); name.textContent = f; name.title = f; li.appendChild(name);
-    const mk = (t, fn, title) => { const b = document.createElement('button'); b.textContent = t; b.title = title; b.onclick = fn; li.appendChild(b); };
-    mk('открыть', async () => { const r = await call({ type: 'fs', op: 'read', path: f }); setCode(r.text); renderChips(null); $('savename').value = f; }, 'Загрузить в редактор');
-    mk('скачать', async () => {
-      const r = await call({ type: 'fs', op: 'read', path: f });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([r.text], { type: 'text/plain;charset=utf-8' }));
-      a.download = f.split('/').pop(); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    }, 'Скачать файл');
-    mk('✕', async () => { const r = await call({ type: 'fs', op: 'delete', path: f }); renderFiles(r.files); }, 'Удалить');
-    ul.appendChild(li);
-  }
-}
-async function refreshFiles() { try { const r = await call({ type: 'fs', op: 'list' }); renderFiles(r.files); } catch (e) { $('files').innerHTML = '<li class="empty">' + esc(e.message || e) + '</li>'; } }
-$('refresh').onclick = refreshFiles;
-$('save').onclick = async () => {
-  const name = $('savename').value.trim(); if (!name) { $('savename').focus(); return; }
-  try { const r = await call({ type: 'fs', op: 'write', path: name, text: code.value }); renderFiles(r.files); status('сохранено: ' + name); }
-  catch (e) { status('не сохранено: ' + (e.message || e)); }
-};
+// ════════════ горячие клавиши ════════════
+document.addEventListener('keydown', e => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key === 'Enter') { e.preventDefault(); run(); }
+  else if (mod && (e.key === 's' || e.key === 'ы')) { e.preventDefault(); saveCurrent(); }
+  else if (e.shiftKey && e.altKey && (e.key === 'F' || e.key === 'f' || e.code === 'KeyF')) { e.preventDefault(); $('format').click(); }
+  else if (e.key === 'Escape' && running) { e.preventDefault(); stop(); }
+});
 
-// ── загрузка ──
-function boot() {
-  const savedLang = load('vladx.lang'); if (savedLang && LANGS[savedLang]) $('lang').value = savedLang;
-  setFmt('vlstd');
-  const saved = load(codeKey());
-  const first = firstExample();
-  setCode(saved || (first ? first.code : ''));
-  renderChips(saved ? null : first && first.name);
-
+// ════════════ загрузка ════════════
+async function boot() {
   if (typeof WebAssembly !== 'object') {
     return fatal('Этот браузер не поддерживает WebAssembly, а ядро VladX — это WebAssembly. Откройте страницу в современном браузере.');
   }
-  if (location.protocol === 'file:') {
-    return fatal('Страница открыта как файл (<code>file://</code>). Браузер не даёт такой странице фоновый поток и хранилище, а ядро VladX работает именно там.<br>Запустите <code>vladx serve</code> в папке проекта и откройте <code>http://localhost:8000/site/playground.html</code>.');
+  const bytes = Uint8Array.from(atob(WASM_B64), c => c.charCodeAt(0));
+  try { await bootCore(bytes); }
+  catch (e) {
+    return fatal('WebAssembly запрещён на этой странице: ' + esc(e.message || e) + '.<br>Обычно это политика безопасности (CSP) без <code>\'wasm-unsafe-eval\'</code>, например во встроенном фрейме. Откройте страницу напрямую. Запасного движка на JavaScript нет намеренно: ядро у VladX одно.');
   }
+  // Документы прошлого сеанса или первый пример.
   try {
-    const blob = new Blob([$('worker-src').textContent], { type: 'text/javascript' });
-    worker = new Worker(URL.createObjectURL(blob));
-  } catch (e) {
-    return fatal('Не удалось запустить фоновый поток (worker): ' + esc(e.message || e) + '. Откройте страницу через <code>vladx serve</code>.');
+    const saved = JSON.parse(load('vladx.docs') || '[]');
+    docs = saved.map(d => newDoc(d));
+  } catch (e) { docs = []; }
+  const savedLang = load('vladx.lang');
+  if (!docs.length) {
+    const l = savedLang && LANGS[savedLang] ? Number(savedLang) : 0;
+    const ex = (EXAMPLES[LANGS[l]] || [])[0];
+    docs = [newDoc(ex ? { name: ex.name, fmt: ex.fmt || 'vlstd', lang: l, code: ex.code, source: 'example', saved: ex.code } : { lang: l })];
   }
-  worker.onmessage = ev => {
-    const m = ev.data;
-    if (m.type === 'stored') { renderFiles(m.files || []); return; }
-    const p = pending.get(m.id); if (!p) return; pending.delete(m.id);
-    if (m.type === 'error') p.reject(new Error(m.message)); else p.resolve(m);
-  };
-  worker.onerror = e => fatal('Ошибка фонового потока: ' + esc(e.message || e));
-  call({ type: 'boot', wasm: WASM_B64 }).then(r => {
-    ready = true; $('run').disabled = false; $('ast').disabled = false;
-    status('ядро готово' + (r.storageErr ? ' · хранилище недоступно' : ''));
-    refreshFiles(); run();
-    llmInfo().then(i => {
-      $('fmt').options[1].textContent = '.vlhmn — текст для ИИ' + (i.available ? '' : ' (ИИ не найден)');
-      $('fmt').title = i.available ? 'ИИ: ' + i.model + ' через ' + i.url : (i.reason || '');
-      if (i.available && !$('llmurl').value) $('llmurl').placeholder = i.url.replace(location.origin, '') + ' · ' + i.model;
-    });
-  }).catch(e => fatal(
-    'WebAssembly запрещён на этой странице: ' + esc(e.message || e) + '.<br>Обычно это политика безопасности (CSP) без <code>\'wasm-unsafe-eval\'</code>, например во встроенном фрейме. Откройте страницу напрямую через <code>vladx serve</code>. Запасного движка на JavaScript нет намеренно: ядро у VladX одно.'));
+  const ci = Number(load('vladx.cur') || 0);
+  openDoc(docs[Math.min(Math.max(ci, 0), docs.length - 1)]);
+
+  if (location.protocol === 'file:') {
+    return fatal('Страница открыта как файл (<code>file://</code>). Редактор работает, но исполнять программы браузер разрешает только странице с сайта: ядру нужны фоновый поток и хранилище.<br>Запустите <code>vladx serve</code> в папке проекта и откройте <code>http://localhost:8000/site/playground.html</code> — или положите страницу на хостинг.');
+  }
+  try { await startWorker(); }
+  catch (e) { return fatal('Не удалось запустить фоновый поток: ' + esc(e.message || e) + '. Откройте страницу через <code>vladx serve</code> или с хостинга по https.'); }
+  ready = true; setRunning(false, 'ядро готово');
+  $('format').disabled = false; $('ast').disabled = false;
+  refreshFiles();
+  llmInfo().then(showLlmInfo);
+  run();
 }
 boot();
 </script>

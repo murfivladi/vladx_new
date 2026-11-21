@@ -3,7 +3,7 @@
 //! Экспорты: `vx_alloc`, `vx_free`, `vx_run`, `vx_parse`, `vx_result_ptr`,
 //! `vx_result_len`, `vx_set_input`, `vx_set_time`, `vx_set_permissions`,
 //! `vx_set_keywords`, `vx_version`, `vx_reset_host`, `vx_run_ast`, `vx_format`,
-//! `vx_set_llm`, `vx_translate`.
+//! `vx_set_llm`, `vx_translate`, `vx_set_interactive`, `vx_tokens`, `vx_check`.
 //!
 //! Импорты (`env.*`): `vx_host_read`, `vx_host_write`, `vx_host_delete`,
 //! `vx_host_list`, `vx_host_get` — возвращают `u64 = (ptr << 32) | len` на буфер
@@ -51,6 +51,8 @@ struct State {
     perms: u32,
     /// Модель на сервере ИИ (входит в ключ кэша переводов).
     llm_model: String,
+    /// Площадка: «спроси» без ответа останавливает программу (см. Options::interactive).
+    interactive: bool,
     /// Кэш переводов .vlhmn на время жизни страницы.
     hmn_cache: std::collections::HashMap<String, String>,
 }
@@ -63,6 +65,7 @@ thread_local! {
         time_ms: 0.0,
         perms: 3,
         llm_model: String::new(),
+        interactive: false,
         hmn_cache: std::collections::HashMap::new(),
     });
 }
@@ -235,24 +238,9 @@ fn diag_json(d: &vladx_ast::Diagnostic) -> serde_json::Value {
 #[no_mangle]
 pub unsafe extern "C" fn vx_run(src_ptr: *const u8, src_len: usize, lang: u32, max_steps: u32) -> u32 {
     let src = read_str(src_ptr, src_len);
-    let (dict, perms) = ST.with(|st| {
-        let st = st.borrow();
-        (st.dict.clone(), st.perms)
-    });
-    let opts = Options {
-        max_steps: if max_steps == 0 { 3_000_000 } else { max_steps as u64 },
-        files: perms & 1 != 0,
-        net: perms & 2 != 0,
-        ..Options::default()
-    };
+    let (dict, opts) = run_setup(max_steps);
     let r = vladx_runtime::run_source(&src, lang_of(lang), &dict, &mut WebHost, opts);
-    let json = serde_json::json!({
-        "ok": r.ok,
-        "stdout": r.stdout,
-        "warnings": r.warnings.iter().map(|w| format!("{}:{}  {}  {}", w.line, w.col, w.code, w.message)).collect::<Vec<_>>(),
-        "diagnostics": r.diagnostics.iter().map(diag_json).collect::<Vec<_>>(),
-    });
-    set_result(json.to_string());
+    set_result(result_json(&r, None));
     r.ok as u32
 }
 
@@ -276,13 +264,34 @@ pub unsafe extern "C" fn vx_parse(src_ptr: *const u8, src_len: usize, lang: u32)
     }
 }
 
+fn run_setup(max_steps: u32) -> (Dictionary, Options) {
+    ST.with(|st| {
+        let st = st.borrow();
+        let opts = Options {
+            max_steps: if max_steps == 0 { 3_000_000 } else { max_steps as u64 },
+            files: st.perms & 1 != 0,
+            net: st.perms & 2 != 0,
+            interactive: st.interactive,
+            seed: Some(st.time_ms.to_bits() | 1),
+            ..Options::default()
+        };
+        (st.dict.clone(), opts)
+    })
+}
+
 fn result_json(r: &vladx_runtime::RunResult, extra: Option<(&str, &str)>) -> String {
+    // «спроси» ждёт ответа — это не ошибка, а пауза: {"waiting": {"prompt": …}}.
+    let waiting = r.diagnostics.first().filter(|d| d.code == vladx_runtime::ASK_WAIT);
+    let diags: Vec<serde_json::Value> = if waiting.is_some() { vec![] } else { r.diagnostics.iter().map(diag_json).collect() };
     let mut json = serde_json::json!({
         "ok": r.ok,
         "stdout": r.stdout,
         "warnings": r.warnings.iter().map(|w| format!("{}:{}  {}  {}", w.line, w.col, w.code, w.message)).collect::<Vec<_>>(),
-        "diagnostics": r.diagnostics.iter().map(diag_json).collect::<Vec<_>>(),
+        "diagnostics": diags,
     });
+    if let Some(w) = waiting {
+        json["waiting"] = serde_json::json!({ "prompt": w.message });
+    }
     if let Some((k, v)) = extra {
         json[k] = v.into();
     }
@@ -299,10 +308,7 @@ fn result_json(r: &vladx_runtime::RunResult, extra: Option<(&str, &str)>) -> Str
 #[no_mangle]
 pub unsafe extern "C" fn vx_run_ast(ptr: *const u8, len: usize, max_steps: u32) -> u32 {
     let json = read_str(ptr, len);
-    let (dict, perms) = ST.with(|st| {
-        let st = st.borrow();
-        (st.dict.clone(), st.perms)
-    });
+    let (dict, opts) = run_setup(max_steps);
     let checked = match vladx_syntax::validate::validate_json(&json, &dict, vladx_runtime::GLOBAL_NAMES) {
         Ok(c) => c,
         Err(ds) => {
@@ -310,12 +316,6 @@ pub unsafe extern "C" fn vx_run_ast(ptr: *const u8, len: usize, max_steps: u32) 
             set_result(result_json(&r, None));
             return 0;
         }
-    };
-    let opts = Options {
-        max_steps: if max_steps == 0 { 3_000_000 } else { max_steps as u64 },
-        files: perms & 1 != 0,
-        net: perms & 2 != 0,
-        ..Options::default()
     };
     let r = vladx_runtime::run_program(&checked.program, &dict, &mut WebHost, opts);
     set_result(result_json(&r, Some(("vlstd", &checked.text))));
@@ -409,4 +409,47 @@ pub unsafe extern "C" fn vx_translate(ptr: *const u8, len: usize, lang: u32) -> 
     let ok = json["ok"] == serde_json::Value::Bool(true);
     set_result(json.to_string());
     ok as u32
+}
+
+// ───────────── редактор: подсветка и живая проверка ─────────────
+
+/// Интерактивный «спроси» (1 — включён).
+#[no_mangle]
+pub extern "C" fn vx_set_interactive(on: u32) {
+    ST.with(|st| st.borrow_mut().interactive = on != 0);
+}
+
+/// Разметка для подсветки: `{"t": [[строка, колонка, длина, вид], …], "e": ошибка | null}`.
+///
+/// # Safety
+/// `ptr..ptr+len` — валидный буфер UTF-8.
+#[no_mangle]
+pub unsafe extern "C" fn vx_tokens(ptr: *const u8, len: usize, lang: u32) -> u32 {
+    let src = read_str(ptr, len);
+    let dict = ST.with(|st| st.borrow().dict.clone());
+    let (toks, err) = vladx_syntax::lexer::highlight(&src, lang_of(lang), &dict, vladx_runtime::GLOBAL_NAMES);
+    let json = serde_json::json!({ "t": toks, "e": err.as_ref().map(diag_json) });
+    set_result(json.to_string());
+    1
+}
+
+/// Проверка без запуска (разбор + статика): `{"diagnostics": [...]}` с ошибками и предупреждениями.
+///
+/// # Safety
+/// `ptr..ptr+len` — валидный буфер UTF-8.
+#[no_mangle]
+pub unsafe extern "C" fn vx_check(ptr: *const u8, len: usize, lang: u32) -> u32 {
+    let src = read_str(ptr, len);
+    let dict = ST.with(|st| st.borrow().dict.clone());
+    let (_, diags) = vladx_syntax::analyze(&src, lang_of(lang), &dict, vladx_runtime::GLOBAL_NAMES);
+    let list: Vec<serde_json::Value> = diags
+        .iter()
+        .map(|d| {
+            let mut v = diag_json(d);
+            v["severity"] = (if d.is_error() { "error" } else { "warning" }).into();
+            v
+        })
+        .collect();
+    set_result(serde_json::json!({ "diagnostics": list }).to_string());
+    diags.iter().all(|d| !d.is_error()) as u32
 }

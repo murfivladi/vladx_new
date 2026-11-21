@@ -65,11 +65,18 @@ pub struct Options {
     pub net: bool,
     /// Зерно случайностей (для воспроизводимых тестов).
     pub seed: Option<u64>,
+    /// Интерактивный ввод (площадка): «спроси» без готового ответа останавливает
+    /// программу кодом [`ASK_WAIT`]; страница спрашивает человека и запускает
+    /// программу заново со всеми ответами (исполнение детерминировано).
+    pub interactive: bool,
 }
+
+/// Код остановки «программа ждёт ответ на спроси» (не ошибка, не ловится «попробуй»).
+pub const ASK_WAIT: &str = "E-ASK-WAIT";
 
 impl Default for Options {
     fn default() -> Self {
-        Options { max_steps: 10_000_000, max_depth: 1000, files: true, net: true, seed: None }
+        Options { max_steps: 10_000_000, max_depth: 1000, files: true, net: true, seed: None, interactive: false }
     }
 }
 

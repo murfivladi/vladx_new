@@ -104,6 +104,7 @@ impl<'a> Lx<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Comment {
     pub line: u32,
+    pub col: u32,
     pub text: String,
     /// Комментарий занимает строку целиком (а не стоит после кода).
     pub own_line: bool,
@@ -138,7 +139,7 @@ pub fn lex_with_comments(src: &str, lang: Lang, dict: &Dictionary) -> Result<(Ve
             }
             let text: String = lx.c[start..lx.i].iter().collect();
             let own_line = !raw.last().is_some_and(|(t, _)| t.line == line);
-            comments.push(Comment { line, text: text.trim_end().to_string(), own_line });
+            comments.push(Comment { line, col, text: text.trim_end().to_string(), own_line });
             continue;
         }
         if ch.is_ascii_digit() {
@@ -382,4 +383,79 @@ fn lex_string(lx: &mut Lx) -> Result<Token, Diagnostic> {
         line,
         col,
     })
+}
+
+/// Токен для подсветки: строка, колонка, длина (в символах), вид.
+pub type HlToken = (u32, u32, u32, &'static str);
+
+/// Разметка исходника для подсветки синтаксиса тем же лексером, что исполняет код.
+/// Виды: `kw` ключевое слово, `lit` литерал, `op` слово-оператор (сравнение, логика),
+/// `id` имя, `fn` функция, `mod` модуль/глобальная функция, `prop` поле, `num`,
+/// `str`, `com` комментарий, `punct`. При ошибке лексики размечается всё до неё,
+/// а ошибка возвращается отдельно.
+pub fn highlight(src: &str, lang: Lang, dict: &Dictionary, globals: &[&str]) -> (Vec<HlToken>, Option<Diagnostic>) {
+    let src = src.strip_prefix('\u{feff}').unwrap_or(src);
+    let (toks, comments, err) = match lex_with_comments(src, lang, dict) {
+        Ok((t, c)) => (t, c, None),
+        Err(d) => {
+            // Лексика до места ошибки: сначала до самой ошибки, иначе — до начала её строки
+            // (ошибка внутри строки «…» ломает и укороченный текст).
+            let mut line_start = 0usize;
+            let mut at_error = 0usize;
+            for (i, l) in src.split_inclusive('\n').enumerate() {
+                if i as u32 + 1 == d.line {
+                    at_error = line_start + l.chars().take(d.col.saturating_sub(1) as usize).map(char::len_utf8).sum::<usize>();
+                    break;
+                }
+                line_start += l.len();
+            }
+            let try_prefix = |end: usize| lex_with_comments(&src[..end.min(src.len())], lang, dict).ok();
+            match try_prefix(at_error).or_else(|| try_prefix(line_start)) {
+                Some((t, c)) => (t, c, Some(d)),
+                None => (vec![], vec![], Some(d)),
+            }
+        }
+    };
+    let mut out: Vec<HlToken> = Vec::with_capacity(toks.len() + comments.len());
+    for (i, t) in toks.iter().enumerate() {
+        let prev = if i > 0 { Some(&toks[i - 1]) } else { None };
+        let next = toks.get(i + 1);
+        let kind = match &t.tk {
+            Tk::Eof => continue,
+            Tk::Num(_) => "num",
+            Tk::Str { .. } => "str",
+            Tk::Sym(_) => "punct",
+            Tk::Kw(ms) => {
+                let op = |p: &str| ms.iter().any(|m| matches!(m, Meaning::Op(id) if id.starts_with(p)));
+                if op("lit.") {
+                    "lit"
+                } else if op("cmp.") || op("logic.") {
+                    "op"
+                } else {
+                    "kw"
+                }
+            }
+            Tk::Ident(name) => {
+                if prev.is_some_and(|p| p.is_sym(".")) {
+                    if next.is_some_and(|n| n.is_sym("(") && n.line == t.line) {
+                        "fn"
+                    } else {
+                        "prop"
+                    }
+                } else if globals.contains(&name.as_str()) {
+                    "mod"
+                } else if prev.is_some_and(|p| p.has_op("fn.declare")) || next.is_some_and(|n| n.is_sym("(") && n.line == t.line) {
+                    "fn"
+                } else {
+                    "id"
+                }
+            }
+        };
+        out.push((t.line, t.col, t.len, kind));
+    }
+    for c in comments {
+        out.push((c.line, c.col, c.text.chars().count() as u32, "com"));
+    }
+    out.sort();
+    (out, err)
 }
