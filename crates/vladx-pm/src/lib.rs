@@ -22,6 +22,68 @@ use std::collections::BTreeMap;
 /// Реестр по умолчанию — тот же сайт, где площадка.
 pub const DEFAULT_REGISTRY: &str = "https://vladinc.ru/vladx";
 
+/// Адрес реестра → адрес его PHP-точки (`…/vladpm-registry.php`).
+pub fn endpoint(registry: &str) -> String {
+    let r = registry.trim_end_matches('/');
+    if r.ends_with(".php") {
+        r.to_string()
+    } else {
+        format!("{r}/vladpm-registry.php")
+    }
+}
+
+/// Процентное кодирование для параметров адреса.
+pub fn url_encode(s: &str) -> String {
+    let mut o = String::new();
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
+            o.push(b as char);
+        } else {
+            o.push_str(&format!("%{b:02X}"));
+        }
+    }
+    o
+}
+
+/// Ответ реестра: JSON; `{"error": …}` — ошибка.
+pub fn registry_json(body: &str) -> Result<serde_json::Value, String> {
+    let v: serde_json::Value = serde_json::from_str(body)
+        .map_err(|_| format!("реестр ответил не JSON: {}", body.chars().take(200).collect::<String>()))?;
+    if let Some(e) = v.get("error").and_then(|e| e.as_str()) {
+        return Err(e.to_string());
+    }
+    Ok(v)
+}
+
+/// Реестр только для чтения поверх любой функции «GET адрес → тело»
+/// (браузер: синхронный XHR в worker'е).
+pub struct GetRegistry<F: FnMut(&str) -> Result<String, String>> {
+    pub url: String,
+    pub get: F,
+}
+
+impl<F: FnMut(&str) -> Result<String, String>> GetRegistry<F> {
+    fn call(&mut self, params: &[(&str, &str)]) -> Result<serde_json::Value, String> {
+        let mut u = self.url.clone();
+        for (i, (k, v)) in params.iter().enumerate() {
+            u.push(if i == 0 { '?' } else { '&' });
+            u.push_str(&format!("{k}={}", url_encode(v)));
+        }
+        registry_json(&(self.get)(&u)?)
+    }
+}
+
+impl<F: FnMut(&str) -> Result<String, String>> Registry for GetRegistry<F> {
+    fn packument(&mut self, name: &str) -> Result<Packument, String> {
+        let v = self.call(&[("op", "info"), ("name", name)])?;
+        serde_json::from_value(v).map_err(|e| format!("карточка «{name}» не прочитана: {e}"))
+    }
+    fn fetch(&mut self, name: &str, version: &str) -> Result<Bundle, String> {
+        let v = self.call(&[("op", "fetch"), ("name", name), ("version", version)])?;
+        serde_json::from_value(v).map_err(|e| format!("пакет {name}@{version} не прочитан: {e}"))
+    }
+}
+
 /// Сведения о версии пакета в реестре.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct VersionMeta {

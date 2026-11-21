@@ -11,6 +11,7 @@
 | `rete.получи` читает любые сайты — ограничений CORS нет | `vladx-fetch.php` |
 | время идёт (`tempo.сейчас`, `tempo.миллисекунды`) | ядро в браузере |
 | `.vlhmn` — программа обычным текстом, ключ ИИ только на сервере | `vladx-llm.php` |
+| пакеты, как npm: `vladpm publish`, `vladpm add`, панель «Пакеты» в IDE | `vladpm-registry.php` + сайт `vladpm.html` |
 
 ## Что загрузить
 
@@ -24,6 +25,8 @@
 | `vladx-fs.php` | файлы программ на сервере: у каждого браузера своя рабочая папка |
 | `vladx-fetch.php` | сеть программ через сервер |
 | `vladx-llm.php` | ИИ для `.vlhmn`: добавляет ключ и модель Polza.ai |
+| `vladpm-registry.php` | реестр пакетов vladpm: регистрация, публикация, поиск |
+| `vladpm.html` | сайт реестра: поиск, карточки пакетов, README, версии |
 | `vladx-common.php` | общее: настройки, лимиты, проверки |
 | `config.example.php` | образец настроек |
 | `.htaccess` | закрывает настройки и данные (Apache) |
@@ -68,6 +71,25 @@
 не стал «дверью» во внутреннюю сеть хостинга, запрещены адреса локальной и служебной сети
 (в том числе после перенаправлений), ограничены размер ответа (`fetch_max_bytes`, 5 МБ),
 время (20 с) и частота (`fetch_per_ip_per_hour`).
+
+## Реестр пакетов vladpm
+
+`vladpm-registry.php` — реестр, как registry.npmjs.org, только на файлах: пакеты, учётные записи и
+токены лежат в `vladx-data/registry/` (пароли и токены — только хешами). Сайт реестра —
+`https://ваш-сайт/vladx/vladpm.html`; площадка рядом сама находит реестр (панель «Пакеты»).
+
+Реестр по умолчанию в `vladpm` — `https://vladinc.ru/vladx`. Свой реестр указывается так:
+
+```bash
+export VLADPM_REGISTRY=https://ваш-сайт/vladx
+```
+
+Читать (поиск, карточки, скачивание) может кто угодно и с любого сайта; публиковать — только
+вошедший пользователь. Регистрация открыта; закрыть — `'registry_open_signup' => false`
+в `config.php`. Пределы: `registry_max_package` (1 МБ), `registry_unpublish_hours` (72),
+`registry_signup_per_hour`, `registry_login_per_hour`, `registry_publish_per_hour`.
+
+Проверка: `https://ваш-сайт/vladx/vladpm-registry.php` отвечает `{"registry": "vladpm", …}`.
 
 ## ИИ и расходы
 

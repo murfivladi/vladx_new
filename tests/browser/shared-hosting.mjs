@@ -47,7 +47,7 @@ const SITE = `http://127.0.0.1:${site.address().port}/data.txt`;
 // ── «хостинг» ──
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vladx-shared-'));
 fs.copyFileSync(path.join(ROOT, 'site/playground.html'), path.join(dir, 'playground.html'));
-for (const f of ['index.php', 'vladx-common.php', 'vladx-llm.php', 'vladx-fs.php', 'vladx-fetch.php']) fs.copyFileSync(path.join(ROOT, 'deploy/shared', f), path.join(dir, f));
+for (const f of ['index.php', 'vladx-common.php', 'vladx-llm.php', 'vladx-fs.php', 'vladx-fetch.php', 'vladpm-registry.php']) fs.copyFileSync(path.join(ROOT, 'deploy/shared', f), path.join(dir, f));
 fs.writeFileSync(path.join(dir, 'config.php'), `<?php return ['polza_api_key' => '${KEY}', 'endpoint' => 'http://127.0.0.1:${polza.address().port}/v1/chat/completions',
   'model' => 'anthropic/claude-haiku-5.5', 'fetch_allow_private' => true];`);
 const port = 18000 + Math.floor(Math.random() * 1000);
@@ -122,6 +122,36 @@ try {
   const direct = browserRequests.filter(r => r.url().includes(String(polza.address().port)));
   check(8, 'браузер не ходит в Polza напрямую', direct.length === 0, direct.map(r => r.url()).join('\n'));
   check(9, 'в консоли нет ошибок', errors.length === 0, errors.join('\n'));
+
+  // ── vladpm: реестр на том же хостинге и панель «Пакеты» ──
+  const { createHash } = await import('node:crypto');
+  const files = { 'vladx.toml': '[проект]\nимя = "@тест/привет"\nверсия = "1.0.0"\nописание = "Приветствия"\nязык = "ru"\n', 'главная.vlstd': 'функция привет(кто) {\n  верни "Привет, " + кто\n}\n' };
+  const h = createHash('sha256');
+  for (const k of Object.keys(files).sort()) { h.update(k); h.update('\0'); h.update(files[k]); h.update('\0'); }
+  const reg = (op, body, token) => php_('vladpm-registry.php?op=' + op, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: JSON.stringify(body) });
+  const acc = await reg('adduser', { user: 'тест', password: 'пароль-123' });
+  const pub = await reg('publish', { bundle: { name: '@тест/привет', version: '1.0.0', files, integrity: 'sha256-' + h.digest('hex') }, meta: { description: 'Приветствия', lang: 'ru', dependencies: {} } }, acc.token);
+  check('11a', 'реестр на хостинге: регистрация и публикация', acc.token && pub.ok, JSON.stringify([acc, pub]));
+  await page.click('#act-packages');
+  await page.waitForFunction(() => /пакетов: 1/.test(document.getElementById('pm-info').textContent), null, { timeout: 10000 }).catch(() => {});
+  check('11b', 'панель «Пакеты» сама нашла реестр рядом', (await page.innerText('#pm-info')).includes('пакетов: 1'), await page.innerText('#pm-info'));
+  await page.fill('#pm-q', 'привет');
+  await page.waitForSelector('#pm-results button:has-text("добавить")', { timeout: 10000 });
+  await page.click('#pm-results button:has-text("добавить")');
+  await page.waitForFunction(() => /готово|ошибка/.test(document.getElementById('status').textContent) && /vladpm/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
+  o = await page.innerText('#output');
+  const inst = await php_('vladx-fs.php', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-VladX-Workspace': ws }, body: JSON.stringify({ op: 'read', path: 'пакеты/@тест/привет/главная.vlstd' }) });
+  check('11c', '«добавить» ставит пакет в рабочую папку на сервере (vladx.toml, vladx.lock, пакеты/)', o.includes('+ @тест/привет@1.0.0') && inst.ok, o + '\n' + JSON.stringify(inst));
+  check('11d', 'зависимость видна в панели с версией', (await page.innerText('#pm-installed')).includes('@тест/привет') && (await page.innerText('#pm-installed')).includes('1.0.0'), await page.innerText('#pm-installed'));
+  await page.selectOption('#fmt', 'vlstd');
+  o = await run('из "@тест/привет" возьми привет\nскажи привет("мир")');
+  check('11e', 'программа подключает пакет: из "@тест/привет" возьми …', o.includes('Привет, мир'), o);
+  await page.click('#act-packages');
+  await page.click('#pm-installed button');
+  await page.waitForFunction(() => /remove.*(готово|ошибка)/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
+  const gone = await php_('vladx-fs.php', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-VladX-Workspace': ws }, body: JSON.stringify({ op: 'list' }) });
+  check('11f', '× убирает пакет из папки и из vladx.toml', !gone.files.some(f => f.startsWith('пакеты/@тест')) && (await page.innerText('#output')).includes('- @тест/привет@1.0.0'), JSON.stringify(gone.files));
+  check('11g', 'в консоли по-прежнему нет ошибок', errors.length === 0, errors.join('\n'));
 
   // Запасной режим: playground.html напрямую, без заголовков изоляции → «спроси» через повтор.
   const p2 = await (await browser.newContext()).newPage();

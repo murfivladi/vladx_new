@@ -121,6 +121,7 @@ kbd { font: 10px var(--mono); opacity: .7; margin-left: 5px; }
 .term .cmd { color: var(--muted); }
 .term .line { white-space: pre-wrap; word-break: break-word; }
 .term .warn { color: var(--warn); }
+.term .err { color: var(--err); }
 .term .diag { color: var(--err); margin: 6px 0; cursor: pointer; white-space: pre-wrap; }
 .term .diag .src { color: var(--ink); opacity: .85; }
 .term .diag .hint { color: var(--ink); }
@@ -155,7 +156,20 @@ kbd { font: 10px var(--mono); opacity: .7; margin-left: 5px; }
 .statusbar button { color: inherit; padding: 0 4px; border-radius: 3px; }
 .statusbar button:hover { background: rgba(255, 255, 255, .15); }
 
+.side-tabs { display: none; }
+.pm-list li { cursor: default; align-items: flex-start; padding-left: 12px; }
+.pm-list li .pm-main { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.pm-list li .pm-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.pm-list li .pm-ver { color: var(--muted); font-weight: 400; font-family: var(--mono); font-size: 11px; }
+.pm-list li .pm-desc { color: var(--muted); font-size: 12px; white-space: normal; }
+.pm-list li .pm-dep { color: #d19a66; font-size: 11px; white-space: normal; }
+.pm-list li button { visibility: visible; flex: none; border: 1px solid var(--line); border-radius: 4px; padding: 1px 7px; color: var(--ink); }
+.pm-list li button:disabled { opacity: .5; }
+#pm-q, #pm-registry { width: 100%; box-sizing: border-box; }
 @media (max-width: 760px) {
+  .side-tabs { display: flex; gap: 2px; padding: 6px 8px 0; }
+  .side-tabs button { flex: 1; padding: 5px 0; font-size: 12px; color: var(--muted); border-radius: 6px; }
+  .side-tabs button.active { color: var(--ink); background: var(--active); }
   #menu-btn { display: inline-block; }
   .workbench { grid-template-columns: minmax(0, 1fr); }
   .activitybar { display: none; }
@@ -196,14 +210,31 @@ kbd { font: 10px var(--mono); opacity: .7; margin-left: 5px; }
 <div class="workbench">
   <nav class="activitybar" aria-label="Панели">
     <button id="act-explorer" class="active" title="Проводник">🗀</button>
+    <button id="act-packages" title="Пакеты (vladpm)">📦</button>
     <button id="act-settings" title="Настройки">⚙</button>
   </nav>
   <aside class="sidebar" id="sidebar">
+    <div class="side-tabs"><button data-view="explorer" class="active">Файлы</button><button data-view="packages">Пакеты</button><button data-view="settings">Настройки</button></div>
     <section id="view-explorer">
       <h3>Примеры</h3>
       <div id="examples" class="tree"></div>
       <h3>Хранилище <span id="store-kind" style="text-transform:none;letter-spacing:0"></span><span class="actions"><button id="newfile" title="Новый файл">+</button><button id="refresh" title="Обновить">↻</button></span></h3>
       <ul id="files" class="tree"><li class="empty">пусто</li></ul>
+    </section>
+    <section id="view-packages" hidden>
+      <h3>Пакеты · vladpm<span class="actions"><button id="pm-install" title="Установить всё из vladx.toml (vladpm install)">⤓</button><button id="pm-update" title="Обновить в пределах диапазонов (vladpm update)">⟳</button></span></h3>
+      <div class="settings">
+        <input type="search" id="pm-q" placeholder="поиск в реестре…" spellcheck="false" aria-label="Поиск пакетов">
+      </div>
+      <ul id="pm-results" class="tree pm-list"></ul>
+      <h3>Зависимости проекта</h3>
+      <ul id="pm-installed" class="tree pm-list"><li class="empty">нет зависимостей</li></ul>
+      <h3>Реестр</h3>
+      <div class="settings">
+        <div class="field"><span>Адрес реестра</span><input type="text" id="pm-registry" spellcheck="false" placeholder="https://vladinc.ru/vladx"></div>
+        <div class="note" id="pm-info">ищу реестр…</div>
+        <div class="note">Пакеты ставятся в хранилище страницы, в папку <code id="pm-dir">пакеты/</code>; подключение — <code>из "имя" возьми …</code>. Опубликовать свой пакет — командой <code>vladpm publish</code>.</div>
+      </div>
     </section>
     <section id="view-settings" hidden>
       <h3>Доступ программы</h3>
@@ -427,6 +458,14 @@ const imports = { env: {
   // Блокирующе ждать ответа человека нельзя: сообщаем странице и отказываем.
   vx_host_llm: (p, l) => guard(() => llmPost(str(p, l))),
   vx_host_ask: (kind) => { const k = kind === 1 ? 'files' : 'net'; if (!asks.includes(k)) asks.push(k); return 0; },
+  // Реестр пакетов — напрямую (это действие IDE, а не сеть программы).
+  vx_host_http: (p, l) => guard(() => {
+    const url = str(p, l), x = new XMLHttpRequest();
+    x.open('GET', url, false);
+    try { x.send(); } catch (e) { throw new Error('реестр недоступен: ' + url.split('?')[0]); }
+    if (x.status === 0) throw new Error('реестр недоступен: ' + url.split('?')[0]);
+    return x.responseText;
+  }),
 }};
 
 // ── OPFS ──
@@ -538,6 +577,28 @@ async function handle(m) {
     catch (e) { postMessage({ type: 'stored', files: await storedList(), error: String((e && e.message) || e) }); }
     return;
   }
+  if (m.type === 'pm') {
+    if (!ex) await instantiate();
+    cfg = Object.assign({}, cfg, { fsUrl: m.fsUrl || '', ws: m.ws || '' });
+    if (!cfg.fsUrl) await prepare();
+    let result;
+    try {
+      const [sp, sl] = put(JSON.stringify(m.req));
+      ex.vx_pm(sp, sl);
+      result = JSON.parse(str(ex.vx_result_ptr(), ex.vx_result_len()));
+      ex.vx_free(sp, sl);
+    } catch (e) {
+      ex = null;
+      result = { ok: false, error: 'внутренняя ошибка ядра: ' + ((e && e.message) || e) };
+    }
+    if (!cfg.fsUrl) {
+      release();
+      if (result.ok) await finalizeStore(); else { wbuf = new Map(); dels = new Set(); }
+    }
+    postMessage({ type: 'reply', id: m.id, result });
+    postMessage({ type: 'stored', files: cfg.fsUrl ? undefined : await storedList() });
+    return;
+  }
   if (m.type === 'translate') {
     if (!ex) await instantiate();
     cfg.llmUrl = m.llmUrl || '';
@@ -634,7 +695,7 @@ async function bootCore(bytes) {
   const noop = () => 0n;
   const { instance } = await WebAssembly.instantiate(bytes, { env: {
     vx_host_read: noop, vx_host_write: noop, vx_host_delete: noop, vx_host_list: noop, vx_host_get: noop, vx_host_llm: noop,
-    vx_host_ask: () => 0, vx_host_say: () => {}, vx_host_input: noop, vx_host_now: () => 0 } });
+    vx_host_ask: () => 0, vx_host_say: () => {}, vx_host_input: noop, vx_host_now: () => 0, vx_host_http: noop } });
   core = instance.exports;
 }
 
@@ -973,11 +1034,16 @@ for (const b of document.querySelectorAll('.panel-tabs > button[data-tab]')) b.o
 $('st-problems').onclick = () => showPanel('problems');
 $('clear').onclick = () => { $('output').innerHTML = ''; };
 function showSideView(v) {
-  $('view-explorer').hidden = v !== 'explorer'; $('view-settings').hidden = v !== 'settings';
-  $('act-explorer').classList.toggle('active', v === 'explorer'); $('act-settings').classList.toggle('active', v === 'settings');
+  for (const n of ['explorer', 'packages', 'settings']) {
+    $('view-' + n).hidden = v !== n; $('act-' + n).classList.toggle('active', v === n);
+  }
+  for (const b of document.querySelectorAll('.side-tabs button')) b.classList.toggle('active', b.dataset.view === v);
+  if (v === 'packages') pmOpen();
 }
 $('act-explorer').onclick = () => showSideView('explorer');
+$('act-packages').onclick = () => showSideView('packages');
 $('act-settings').onclick = () => showSideView('settings');
+for (const b of document.querySelectorAll('.side-tabs button')) b.onclick = () => showSideView(b.dataset.view);
 $('menu-btn').onclick = () => document.body.classList.toggle('side-open');
 function closeSide() { document.body.classList.remove('side-open'); }
 // Высота нижней панели — перетаскиванием.
@@ -1020,6 +1086,129 @@ function startWorker() {
   worker.onerror = e => fatal('Ошибка фонового потока: ' + esc(e.message || e));
   return call({ type: 'boot', wasm: WASM_B64 });
 }
+
+// ════════════ пакеты: vladpm в площадке ════════════
+// Поиск — запросом к реестру со страницы; установка — в worker'е тем же кодом,
+// что у vladpm в командной строке (vladx-pm в WASM), прямо в хранилище страницы.
+const pm = { url: '', site: '', busy: false, deps: {}, lock: {}, dir: 'пакеты' };
+function pmEndpoint(base) { base = base.replace(/\/+$/, ''); return /\.php$/.test(base) ? base : base + '/vladpm-registry.php'; }
+async function pmProbe() {
+  const saved = load('vladx.registry');
+  if (saved) return saved;
+  try {
+    const r = await fetch(new URL('vladpm-registry.php', location.href).href, { cache: 'no-store' });
+    const j = await r.json();
+    if (j && j.registry === 'vladpm') return new URL('.', location.href).href.replace(/\/$/, '');
+  } catch (e) {}
+  return 'https://vladinc.ru/vladx';
+}
+function pmSetRegistry(base) {
+  pm.base = base;
+  pm.url = pmEndpoint(base);
+  pm.site = pm.url.replace(/vladpm-registry\.php$/, 'vladpm.html');
+  $('pm-registry').value = base;
+  fetch(pm.url, { cache: 'no-store' }).then(r => r.json()).then(j => {
+    $('pm-info').innerHTML = 'Реестр: ' + esc(base) + ' · пакетов: ' + (j.packages | 0) + ' · <a href="' + esc(pm.site) + '" target="_blank" rel="noopener">сайт реестра</a>';
+  }).catch(() => { $('pm-info').textContent = 'Реестр ' + base + ' недоступен.'; });
+}
+$('pm-registry').addEventListener('change', () => {
+  const v = $('pm-registry').value.trim();
+  if (v) { store('vladx.registry', v); } else { try { localStorage.removeItem('vladx.registry'); } catch (e) {} }
+  pm.base = ''; pmProbed = pmProbe(); pmOpen();
+});
+async function pmRefresh() {
+  pm.deps = {}; pm.lock = {};
+  let manifest = null;
+  try { manifest = await storage.read('vladx.toml'); } catch (e) {}
+  if (manifest != null && core) {
+    const r = JSON.parse(coreCall('vx_manifest', manifest).out);
+    if (r.ok) { pm.deps = r.dependencies || {}; pm.dir = r.modules_dir || 'пакеты'; }
+    else { $('pm-installed').innerHTML = '<li class="empty">vladx.toml: ' + esc(r.error) + '</li>'; return; }
+  } else {
+    pm.dir = ['пакеты', 'pacchetti', 'pacchetti'][lang()];
+  }
+  $('pm-dir').textContent = pm.dir + '/';
+  try { pm.lock = (JSON.parse(await storage.read('vladx.lock')).packages) || {}; } catch (e) {}
+  const ul = $('pm-installed'); ul.innerHTML = '';
+  const names = Object.keys(pm.deps);
+  if (!names.length) ul.innerHTML = '<li class="empty">нет зависимостей — найдите пакет выше и нажмите «добавить»</li>';
+  for (const n of names) {
+    const li = document.createElement('li');
+    const ver = pm.lock[n] ? pm.lock[n].version : 'не установлен';
+    li.innerHTML = '<span class="pm-main"><span class="pm-name">' + esc(n) + ' <span class="pm-ver">' + esc(ver) + '</span></span><span class="pm-desc">' + esc(pm.deps[n]) + '</span></span>';
+    const b = document.createElement('button'); b.textContent = '×'; b.title = 'Убрать (vladpm remove ' + n + ')';
+    b.onclick = () => pmRun('remove', [n]);
+    li.appendChild(b); ul.appendChild(li);
+  }
+  for (const [n, e] of Object.entries(pm.lock)) {
+    if (pm.deps[n]) continue;
+    const li = document.createElement('li');
+    li.innerHTML = '<span class="pm-main"><span class="pm-name">' + esc(n) + ' <span class="pm-ver">' + esc(e.version) + '</span></span><span class="pm-dep">зависимость пакета</span></span>';
+    ul.appendChild(li);
+  }
+}
+// Реестр спрашивается только когда открыта панель: без лишних запросов при загрузке.
+let pmProbed = null;
+async function pmOpen() {
+  if (!pmProbed) pmProbed = pmProbe();
+  const base = await pmProbed;
+  if (!pm.base) pmSetRegistry(base); else pmSetRegistry(pm.base);
+  await pmRefresh();
+  pmSearch();
+}
+let pmTimer = 0;
+async function pmSearch() {
+  const q = $('pm-q').value.trim(), ul = $('pm-results');
+  if (!pm.url) return;
+  try {
+    const j = await (await fetch(pm.url + '?op=search&q=' + encodeURIComponent(q), { cache: 'no-store' })).json();
+    if (j.error) throw new Error(j.error);
+    ul.innerHTML = '';
+    if (!j.results.length) { ul.innerHTML = '<li class="empty">' + (q ? 'ничего не найдено' : 'в реестре пока нет пакетов') + '</li>'; return; }
+    for (const p of j.results) {
+      const li = document.createElement('li');
+      li.innerHTML = '<span class="pm-main"><span class="pm-name">' + esc(p.name) + ' <span class="pm-ver">' + esc(p.version) + (p.lang ? ' · ' + esc(p.lang) : '') + '</span></span>'
+        + (p.description ? '<span class="pm-desc">' + esc(p.description) + '</span>' : '')
+        + (p.deprecated ? '<span class="pm-dep">устарел: ' + esc(p.deprecated) + '</span>' : '') + '</span>';
+      const b = document.createElement('button');
+      const have = !!pm.deps[p.name];
+      b.textContent = have ? '✓' : 'добавить'; b.disabled = have; b.title = have ? 'уже в зависимостях' : 'vladpm add ' + p.name;
+      b.onclick = () => pmRun('add', [p.name]);
+      li.appendChild(b); ul.appendChild(li);
+    }
+  } catch (e) { ul.innerHTML = '<li class="empty">поиск не удался: ' + esc(e.message || e) + '</li>'; }
+}
+$('pm-q').addEventListener('input', () => { clearTimeout(pmTimer); pmTimer = setTimeout(pmSearch, 250); });
+async function pmRun(op, args) {
+  if (!ready || pm.busy) return;
+  if (running) { status('сначала остановите программу'); return; }
+  pm.busy = true;
+  const label = 'vladpm ' + op + (args.length ? ' ' + args.join(' ') : '');
+  status(label + '…');
+  showPanel('terminal');
+  $('output').appendChild(termLine('$ ' + label, 'cmd'));
+  const fs = serverFs();
+  try {
+    const { result } = await call({ type: 'pm', req: { op, args, registry: pm.url, lang: lang() }, fsUrl: fs ? fs.url : '', ws: fs ? workspace() : '' });
+    if (result.ok) {
+      for (const l of result.summary.trim().split('\n')) $('output').appendChild(termLine(l, l.startsWith('предупреждение') ? 'warn' : ''));
+      status(label + ': готово');
+    } else {
+      $('output').appendChild(termLine(result.error, 'err'));
+      status(label + ': ошибка');
+    }
+  } catch (e) {
+    $('output').appendChild(termLine(String(e.message || e), 'err'));
+  } finally {
+    pm.busy = false;
+    $('terminal').scrollTop = $('terminal').scrollHeight;
+    await refreshFiles();
+    await pmRefresh();
+    pmSearch();
+  }
+}
+$('pm-install').onclick = () => pmRun('install', []);
+$('pm-update').onclick = () => pmRun('update', []);
 
 // ════════════ терминал ════════════
 function termLine(text, cls) { const d = document.createElement('div'); d.className = 'line' + (cls ? ' ' + cls : ''); d.textContent = text; return d; }

@@ -86,27 +86,8 @@ fn rc_save(v: &Value) -> Result<(), String> {
 
 // ───────────── HTTP-реестр ─────────────
 
-/// Адрес реестра → адрес его PHP-точки.
-pub fn endpoint(registry: &str) -> String {
-    let r = registry.trim_end_matches('/');
-    if r.ends_with(".php") {
-        r.to_string()
-    } else {
-        format!("{r}/vladpm-registry.php")
-    }
-}
-
-fn enc(s: &str) -> String {
-    let mut o = String::new();
-    for b in s.bytes() {
-        if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
-            o.push(b as char);
-        } else {
-            o.push_str(&format!("%{b:02X}"));
-        }
-    }
-    o
-}
+pub use vladx_pm::endpoint;
+use vladx_pm::url_encode as enc;
 
 pub struct HttpRegistry {
     pub url: String,
@@ -120,12 +101,7 @@ impl HttpRegistry {
             Err(ureq::Error::Status(c, r)) => (c, r.into_string().unwrap_or_default()),
             Err(e) => return Err(format!("реестр недоступен: {e}")),
         };
-        let v: Value = serde_json::from_str(&body).map_err(|_| {
-            format!("реестр ответил не JSON (код {code}): {}", body.chars().take(200).collect::<String>())
-        })?;
-        if let Some(e) = v.get("error").and_then(|e| e.as_str()) {
-            return Err(e.to_string());
-        }
+        let v = vladx_pm::registry_json(&body).map_err(|e| if e.starts_with("реестр ответил не JSON") { format!("{e} (код {code})") } else { e })?;
         if code >= 400 {
             return Err(format!("реестр ответил {code}"));
         }

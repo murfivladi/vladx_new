@@ -13,6 +13,8 @@
 //! (`"ok\n<ответ>"`; только в режиме 2); `vx_host_now() → f64` — время в мс (0 — взять vx_set_time).
 //! `vx_host_llm(json)` — диалог перевода `.vlhmn` (`{"messages": [...]}`) серверу ИИ
 //! (`vladx-llm.php` или `vladx serve` → /llm); ответ — `"ok\n<текст модели>"` или `"err\n…"`.
+//! `vx_host_http(адрес)` — GET к реестру пакетов напрямую (не сеть программы): `"ok\n<тело>"`.
+//! `vx_pm(json)` — менеджер пакетов в хранилище страницы (как `vladpm install/add/remove/update`).
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -32,6 +34,7 @@ extern "C" {
     fn vx_host_say(p: *const u8, l: usize);
     fn vx_host_input(p: *const u8, l: usize) -> u64;
     fn vx_host_now() -> f64;
+    fn vx_host_http(p: *const u8, l: usize) -> u64;
 }
 
 // Вне WASM (cargo test/build на хосте) — заглушки: хоста нет.
@@ -47,6 +50,7 @@ mod stubs {
     pub unsafe fn vx_host_say(_: *const u8, _: usize) {}
     pub unsafe fn vx_host_input(_: *const u8, _: usize) -> u64 { 0 }
     pub unsafe fn vx_host_now() -> f64 { 0.0 }
+    pub unsafe fn vx_host_http(_: *const u8, _: usize) -> u64 { 0 }
 }
 #[cfg(not(target_arch = "wasm32"))]
 use stubs::*;
@@ -492,4 +496,104 @@ pub unsafe extern "C" fn vx_check(ptr: *const u8, len: usize, lang: u32) -> u32 
 pub unsafe extern "C" fn vx_set_main_dir(ptr: *const u8, len: usize) {
     let d = read_str(ptr, len);
     ST.with(|st| st.borrow_mut().main_dir = d);
+}
+
+// ───────────── vladpm в площадке ─────────────
+
+/// Файлы хранилища страницы (OPFS или сервер) для менеджера пакетов.
+struct WebFs;
+
+impl vladx_pm::Fs for WebFs {
+    fn read(&mut self, path: &str) -> Option<String> {
+        WebHost.read(path).ok()
+    }
+    fn write(&mut self, path: &str, content: &str) -> Result<(), String> {
+        WebHost.write(path, content)
+    }
+    fn remove_dir(&mut self, path: &str) -> Result<(), String> {
+        let pre = format!("{path}/");
+        for f in WebHost.list()?.into_iter().filter(|f| f.starts_with(&pre)) {
+            WebHost.delete(&f)?;
+        }
+        Ok(())
+    }
+}
+
+/// Менеджер пакетов: `{"op": "install"|"add"|"remove"|"update", "args": […],
+/// "registry": "https://…", "lang": 0}`. Нет vladx.toml — создаётся на языке `lang`.
+/// Результат — `{"ok": true, "report": {...}, "summary": "..."}` или `{"ok": false, "error": "..."}`.
+///
+/// # Safety
+/// `ptr..ptr+len` — валидный буфер UTF-8.
+#[no_mangle]
+pub unsafe extern "C" fn vx_pm(ptr: *const u8, len: usize) -> u32 {
+    let req: serde_json::Value = serde_json::from_str(&read_str(ptr, len)).unwrap_or_default();
+    let s = |k: &str| req.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let args: Vec<String> = req
+        .get("args")
+        .and_then(|a| a.as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+    let lang = Lang::from_index(req.get("lang").and_then(|v| v.as_u64()).unwrap_or(0) as u32).unwrap_or(Lang::Ru);
+    let registry = { let r = s("registry"); if r.is_empty() { vladx_pm::DEFAULT_REGISTRY.to_string() } else { r } };
+    let dict = ST.with(|st| st.borrow().dict.clone());
+    let mut fs = WebFs;
+    let mut reg = vladx_pm::GetRegistry {
+        url: vladx_pm::endpoint(&registry),
+        get: |u: &str| take_reply(vx_host_http(u.as_ptr(), u.len())),
+    };
+    let r = (|| -> Result<vladx_pm::Report, String> {
+        use vladx_pm::Fs;
+        if fs.read(vladx_pm::manifest::FILE).is_none() {
+            let m = vladx_pm::Manifest {
+                name: Some("площадка".into()),
+                version: Some("1.0.0".into()),
+                lang: Some(lang),
+                ..vladx_pm::Manifest::default()
+            };
+            fs.write(vladx_pm::manifest::FILE, &vladx_pm::manifest::render(&m, lang, &dict))?;
+        }
+        match s("op").as_str() {
+            "add" => vladx_pm::add(&mut fs, &mut reg, &dict, &args),
+            "remove" => vladx_pm::remove(&mut fs, &mut reg, &dict, &args),
+            "update" => {
+                let names: std::collections::BTreeSet<String> = args.iter().cloned().collect();
+                let all = names.is_empty();
+                vladx_pm::install(&mut fs, &mut reg, &dict, &names, all)
+            }
+            _ => vladx_pm::install(&mut fs, &mut reg, &dict, &Default::default(), false),
+        }
+    })();
+    let ok = r.is_ok();
+    set_result(match r {
+        Ok(rep) => serde_json::json!({ "ok": true, "summary": rep.summary(), "report": rep }).to_string(),
+        Err(e) => serde_json::json!({ "ok": false, "error": e }).to_string(),
+    });
+    ok as u32
+}
+
+/// Разобрать vladx.toml (для панели «Пакеты»): `{"ok": true, "name", "lang", "dependencies", "scripts"}`.
+///
+/// # Safety
+/// `ptr..ptr+len` — валидный буфер UTF-8.
+#[no_mangle]
+pub unsafe extern "C" fn vx_manifest(ptr: *const u8, len: usize) -> u32 {
+    let src = read_str(ptr, len);
+    let dict = ST.with(|st| st.borrow().dict.clone());
+    let r = vladx_pm::manifest::parse(&src, &dict);
+    let ok = r.is_ok();
+    set_result(match r {
+        Ok(m) => serde_json::json!({
+            "ok": true,
+            "name": m.name,
+            "version": m.version,
+            "lang": m.lang.map(|l| l.code()),
+            "modules_dir": vladx_pm::manifest::modules_dir(&dict, m.lang.unwrap_or(Lang::Ru)),
+            "dependencies": m.dependencies,
+            "scripts": m.scripts,
+        })
+        .to_string(),
+        Err(e) => serde_json::json!({ "ok": false, "error": e }).to_string(),
+    });
+    ok as u32
 }

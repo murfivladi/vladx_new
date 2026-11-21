@@ -29,4 +29,10 @@ return [
     'fetch_enabled'         => true,
     'fetch_max_bytes'       => 5 * 1024 * 1024,
     'fetch_per_ip_per_hour' => 600,
+
+    // Реестр пакетов vladpm (vladpm-registry.php): регистрация открыта, пакет до 1 МБ.
+    'registry_enabled'         => true,
+    'registry_open_signup'     => true,
+    'registry_max_package'     => 1024 * 1024,
+    'registry_unpublish_hours' => 72,
 ];

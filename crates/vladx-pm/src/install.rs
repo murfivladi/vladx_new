@@ -11,7 +11,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use vladx_syntax::{Dictionary, Lang};
 
 /// Что установлено в папке пакетов (как node_modules/.package-lock.json).
-pub const STATE: &str = ".vladpm.json";
+/// Не скрытый файл (серверные хранилища не принимают имён с точки) и не имя пакета.
+pub const STATE: &str = "_vladpm.json";
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct State {

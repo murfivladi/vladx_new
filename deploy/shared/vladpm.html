@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vladpm — пакеты VladX</title>
+<style>
+:root {
+  --bg: #1e1f22; --card: #24262a; --ink: #dcdee3; --muted: #8b9099; --line: #34363c; --hover: #2c2e33;
+  --accent: #e0703f; --accent-ink: #1a1009; --warn: #e3b341; --ok: #6cc28b; --code: #191a1d;
+  --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg: #f6f6f7; --card: #ffffff; --ink: #1f2328; --muted: #6a6f78; --line: #dcdde1; --hover: #f0f0f2;
+    --accent: #b4441f; --accent-ink: #fff; --warn: #9a6a00; --ok: #2f7d4a; --code: #f1f1f3; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+header { border-bottom: 1px solid var(--line); background: var(--card); }
+.wrap { max-width: 920px; margin: 0 auto; padding: 0 16px; }
+.top { display: flex; align-items: center; gap: 14px; padding: 12px 0; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; color: var(--ink); }
+.logo { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: var(--accent-ink); font-weight: 800; }
+.top nav { margin-left: auto; display: flex; gap: 14px; font-size: 14px; }
+.search { display: flex; gap: 8px; padding: 0 0 14px; }
+.search input { flex: 1; min-width: 0; font: inherit; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.search input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+main.wrap { padding-top: 26px; padding-bottom: 48px; }
+h1 { font-size: 26px; margin: 0 0 4px; word-break: break-word; }
+h2 { font-size: 17px; margin: 26px 0 10px; }
+.muted { color: var(--muted); }
+.list { display: grid; gap: 10px; }
+.item { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; color: var(--ink); }
+.item:hover { background: var(--hover); text-decoration: none; }
+.item .name { font-weight: 650; font-size: 16px; word-break: break-word; }
+.item .meta, .tags { font-size: 13px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; margin-top: 2px; }
+.tag { font-size: 12px; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+.tag.dep { color: var(--warn); border-color: currentColor; }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 26px; align-items: start; }
+.side { display: grid; gap: 16px; }
+.box { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.box h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.cmd { display: flex; align-items: center; gap: 6px; font: 13px var(--mono); background: var(--code); border-radius: 6px; padding: 7px 9px; }
+.cmd code { flex: 1; overflow-x: auto; white-space: nowrap; }
+.cmd button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0 2px; }
+.versions { list-style: none; padding: 0; margin: 0; font: 13px var(--mono); }
+.versions li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+.versions li:last-child { border: 0; }
+.versions li > span:last-child { white-space: nowrap; font-size: 12px; }
+.readme { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 4px 20px 14px; overflow-wrap: anywhere; }
+.readme pre { background: var(--code); padding: 10px 12px; border-radius: 6px; overflow-x: auto; font: 13px/1.5 var(--mono); }
+.readme code { font-family: var(--mono); font-size: 13px; background: var(--code); padding: 1px 4px; border-radius: 4px; }
+.readme pre code { background: none; padding: 0; }
+.warnbox { border: 1px solid var(--warn); color: var(--warn); border-radius: 10px; padding: 10px 14px; margin: 12px 0; }
+.howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 8px; }
+.empty { padding: 30px 0; text-align: center; color: var(--muted); }
+@media (max-width: 720px) { .grid { grid-template-columns: minmax(0, 1fr); } .top nav { margin-left: 0; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="top">
+      <a class="brand" href="#/"><span class="logo">V</span>vladpm</a>
+      <span class="muted" style="font-size:13px">пакеты для VladX</span>
+      <nav><a href="./">Площадка</a><a href="#/как">Как публиковать</a></nav>
+    </div>
+    <form class="search" id="search"><input type="search" id="q" placeholder="Найти пакет: имя, описание, автор…" aria-label="Поиск пакетов" autocomplete="off"></form>
+  </div>
+</header>
+<main class="wrap" id="view" aria-live="polite"></main>
+<script>
+'use strict';
+const API = 'vladpm-registry.php';
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+async function api(params) {
+  const r = await fetch(API + '?' + new URLSearchParams(params), { cache: 'no-store' });
+  const j = await r.json();
+  if (j.error) throw new Error(j.error);
+  return j;
+}
+function when(ts) { return ts ? new Date(ts * 1000).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
+const LANG = { ru: 'русский', it: 'italiano', scn: 'sicilianu' };
+function cmd(text) {
+  return '<div class="cmd"><code>' + esc(text) + '</code><button title="Скопировать" data-copy="' + esc(text) + '">⧉</button></div>';
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-copy]');
+  if (b && navigator.clipboard) { navigator.clipboard.writeText(b.dataset.copy); b.textContent = '✓'; setTimeout(() => (b.textContent = '⧉'), 1200); }
+});
+
+// Небольшой Markdown для README: заголовки, списки, код, ссылки, жирный. Всё экранируется.
+function md(src) {
+  const lines = String(src).replace(/\r/g, '').split('\n');
+  let out = '', list = false, code = null, para = [];
+  const inline = t => esc(t)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" rel="nofollow noopener" target="_blank">$1</a>');
+  const flush = () => { if (para.length) { out += '<p>' + inline(para.join(' ')) + '</p>'; para = []; } if (list) { out += '</ul>'; list = false; } };
+  for (const l of lines) {
+    if (code !== null) { if (/^```/.test(l)) { out += '<pre><code>' + esc(code.join('\n')) + '</code></pre>'; code = null; } else code.push(l); continue; }
+    if (/^```/.test(l)) { flush(); code = []; continue; }
+    const h = l.match(/^(#{1,4})\s+(.*)/);
+    if (h) { flush(); const n = Math.min(h[1].length + 1, 5); out += '<h' + n + '>' + inline(h[2]) + '</h' + n + '>'; continue; }
+    const li = l.match(/^\s*[-*]\s+(.*)/);
+    if (li) { if (para.length) { out += '<p>' + inline(para.join(' ')) + '</p>'; para = []; } if (!list) { out += '<ul>'; list = true; } out += '<li>' + inline(li[1]) + '</li>'; continue; }
+    if (!l.trim()) { flush(); continue; }
+    if (list) { out += '</ul>'; list = false; }
+    para.push(l.trim());
+  }
+  if (code !== null) out += '<pre><code>' + esc(code.join('\n')) + '</code></pre>';
+  flush();
+  return out;
+}
+
+function item(p) {
+  return '<a class="item" href="#/' + esc(p.name) + '"><div class="name">' + esc(p.name) + ' <span class="muted" style="font-weight:400;font-size:14px">' + esc(p.version) + '</span></div>'
+    + (p.description ? '<div>' + esc(p.description) + '</div>' : '')
+    + '<div class="meta">' + (p.lang ? '<span class="tag">' + esc(LANG[p.lang] || p.lang) + '</span>' : '')
+    + (p.deprecated ? '<span class="tag dep">устарел</span>' : '')
+    + '<span>' + esc((p.owners || []).join(', ')) + '</span><span>' + when(p.updated) + '</span></div></a>';
+}
+
+async function showSearch(q) {
+  const v = $('view');
+  v.innerHTML = '<div class="empty">ищу…</div>';
+  try {
+    const j = await api({ op: 'search', q });
+    const head = q ? '<h2>Найдено: ' + j.total + '</h2>' : '<h1>Пакеты VladX</h1><p class="muted">Код на русском, итальянском и сицилийском — подключается одной строкой: <code>из "имя" возьми …</code></p><h2>Недавние</h2>';
+    v.innerHTML = head + (j.results.length ? '<div class="list">' + j.results.map(item).join('') + '</div>'
+      : '<div class="empty">' + (q ? 'Ничего не нашлось.' : 'Пакетов пока нет — опубликуйте первый!') + ' <a href="#/как">Как публиковать</a></div>');
+  } catch (e) { v.innerHTML = '<div class="empty">Реестр не ответил: ' + esc(e.message) + '</div>'; }
+}
+
+async function showPackage(name) {
+  const v = $('view');
+  v.innerHTML = '<div class="empty">загружаю…</div>';
+  let p;
+  try { p = await api({ op: 'info', name }); }
+  catch (e) { v.innerHTML = '<h1>' + esc(name) + '</h1><div class="empty">' + esc(e.message) + '</div>'; return; }
+  const latest = p.latest, meta = p.versions[latest] || {};
+  const versions = Object.keys(p.versions).reverse();
+  const deps = Object.entries(meta.dependencies || {});
+  const l = meta.lang || 'ru';
+  const takeWord = { ru: 'из "' + p.name + '" возьми …', it: 'da "' + p.name + '" prendi …', scn: 'di "' + p.name + '" pigghia …' }[l];
+  document.title = p.name + ' — vladpm';
+  v.innerHTML = '<div class="grid"><div>'
+    + '<h1>' + esc(p.name) + '</h1>'
+    + '<div class="tags"><span>' + esc(latest) + '</span><span class="tag">' + esc(LANG[l] || l) + '</span>' + (meta.license ? '<span class="tag">' + esc(meta.license) + '</span>' : '') + '<span>опубликован ' + when(meta.published) + '</span></div>'
+    + (p.description ? '<p>' + esc(p.description) + '</p>' : '')
+    + (meta.deprecated ? '<div class="warnbox">Эта версия устарела: ' + esc(meta.deprecated) + '</div>' : '')
+    + (p.readme ? '<div class="readme">' + md(p.readme) + '</div>' : '<p class="muted">README нет.</p>')
+    + '</div><aside class="side">'
+    + '<div class="box"><h3>Установка</h3>' + cmd('vladpm add ' + p.name) + '<div class="muted" style="font-size:13px;margin-top:8px">В программе:</div>' + cmd(takeWord) + '</div>'
+    + '<div class="box"><h3>Зависимости</h3>' + (deps.length ? deps.map(([n, r]) => '<div><a href="#/' + esc(n) + '">' + esc(n) + '</a> <span class="muted">' + esc(r) + '</span></div>').join('') : '<span class="muted">нет</span>') + '</div>'
+    + '<div class="box"><h3>Версии</h3><ul class="versions">' + versions.map(x => '<li><span>' + esc(x) + (p.versions[x].deprecated ? ' <span class="tag dep" title="' + esc(p.versions[x].deprecated) + '">устарел</span>' : '') + '</span><span class="muted">' + when(p.versions[x].published) + '</span></li>').join('') + '</ul></div>'
+    + '<div class="box"><h3>Владельцы</h3>' + esc((p.owners || []).join(', ')) + (meta.author ? '<div class="muted">автор: ' + esc(meta.author) + '</div>' : '') + '</div>'
+    + '</aside></div>';
+}
+
+function showHowto() {
+  document.title = 'Как публиковать — vladpm';
+  $('view').innerHTML = '<h1>Как опубликовать пакет</h1>'
+    + '<p>Пакет — это проект VladX с файлом <code>vladx.toml</code>. Скачайте <code>vladx</code> и <code>vladpm</code> из <a href="https://github.com/murfivladi/vladx_new/releases/tag/nightly">релиза nightly</a>.</p>'
+    + '<div class="howto">'
+    + '<div class="box"><h3>1. Проект</h3>' + cmd('vladpm init мой-пакет') + '<div class="muted" style="font-size:13px;margin-top:6px">В <code>vladx.toml</code> — имя, версия, язык. Имя можно кириллицей: <code>@автор/строки</code>.</div></div>'
+    + '<div class="box"><h3>2. Учётная запись</h3>' + cmd('vladpm adduser') + '<div class="muted" style="font-size:13px;margin-top:6px">Логин и пароль; токен сохранится в <code>~/.vladpmrc</code>. Уже есть — <code>vladpm login</code>.</div></div>'
+    + '<div class="box"><h3>3. Публикация</h3>' + cmd('vladpm publish') + '<div class="muted" style="font-size:13px;margin-top:6px">Новая версия — поднимите <code>версия</code> в vladx.toml. Снять версию можно в течение 72 часов: <code>vladpm unpublish имя@1.0.0</code>.</div></div>'
+    + '</div>'
+    + '<h2>Подключение</h2>' + cmd('vladpm add @автор/строки')
+    + '<p>Пакет ляжет в папку <code>пакеты/</code> (в итальянском проекте — <code>pacchetti/</code>), версия запишется в <code>vladx.lock</code>. В программе: <code>из "@автор/строки" возьми склей</code>. Свои файлы подключаются с <code>./</code> — как в Node.</p>'
+    + '<h2>vladx.toml</h2><div class="readme"><pre><code>' + esc('[проект]\nимя = "@автор/строки"\nверсия = "1.2.0"\nописание = "Работа со строками"\nязык = "ru"\nглавный = "главная.vlstd"\n\n[зависимости]\n@автор/утилиты = "^1.0.0"\n\n[скрипты]\nтест = "vladx run тесты.vlstd"') + '</code></pre></div>'
+    + '<p class="muted">То же по-итальянски: <code>[progetto]</code>, <code>nome</code>, <code>[dipendenze]</code>, <code>[script]</code>. Английские ключи тоже понимаются.</p>';
+}
+
+function route() {
+  const h = decodeURIComponent(location.hash.replace(/^#\/?/, ''));
+  if (h === 'как') return showHowto();
+  if (h.startsWith('?')) { $('q').value = h.slice(1); return showSearch(h.slice(1)); }
+  if (h) return showPackage(h);
+  document.title = 'vladpm — пакеты VladX';
+  showSearch('');
+}
+$('search').addEventListener('submit', e => { e.preventDefault(); location.hash = '#/?' + $('q').value.trim(); });
+let t = 0;
+$('q').addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { location.hash = '#/?' + $('q').value.trim(); }, 300); });
+window.addEventListener('hashchange', route);
+route();
+</script>
+</body>
+</html>

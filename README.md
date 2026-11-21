@@ -32,6 +32,8 @@ dì "ciao, {nome}"
 Готовый `vladx` собирается на GitHub при каждом push и лежит в релизе **nightly**:
 <https://github.com/murfivladi/vladx_new/releases/tag/nightly>
 
+В архивах для систем — `vladx` и `vladpm`.
+
 | Система | Файл |
 |---|---|
 | Linux x86_64 (статический) | `vladx-x86_64-unknown-linux-musl.tar.gz` |
@@ -39,7 +41,7 @@ dì "ciao, {nome}"
 | macOS Intel | `vladx-x86_64-apple-darwin.tar.gz` |
 | Windows x86_64 | `vladx-x86_64-pc-windows-msvc.zip` |
 | Площадка и ядро WASM | `vladx-playground.html`, `vladx.wasm` |
-| Для shared-хостинга (площадка «как Node» + PHP: файлы, сеть, ИИ) | `vladx-shared.zip` |
+| Для shared-хостинга (площадка «как Node» + PHP: файлы, сеть, ИИ, реестр пакетов) | `vladx-shared.zip` |
 
 Распакуйте архив и запустите `vladx run examples/ru/01-hello.vlstd`. На macOS при первом запуске может понадобиться `xattr -d com.apple.quarantine vladx`. Тег `v*` (например, `v0.1.0`) создаёт постоянный релиз с тем же набором файлов. Сборкой управляет `.github/workflows/release.yml`.
 
@@ -75,7 +77,37 @@ vladx init мой-проект
 cd мой-проект && vladx run
 ```
 
-`vladx.toml` задаёт язык, точку входа и права, а модули подключаются так: `из "утилиты" возьми приветствие`.
+`vladx.toml` задаёт язык, точку входа, права и зависимости — разделы пишутся на языке проекта (`[проект]`, `[зависимости]`; по-итальянски `[progetto]`, `[dipendenze]`). Свои файлы подключаются с `./`, как в Node: `из "./утилиты" возьми приветствие`.
+
+## Пакеты: vladpm
+
+Менеджер пакетов, как npm, — `vladpm` (или `vladx pm`), реестр и его сайт — на <https://vladinc.ru/vladx/vladpm.html>:
+
+```bash
+vladpm add @влад/строки
+```
+
+```vladx
+из "@влад/строки" возьми крик
+скажи крик("привет")
+```
+
+Пакет ложится в `пакеты/` (в итальянском проекте — `pacchetti/`), точные версии — в `vladx.lock`. Свой пакет: `vladpm adduser`, затем `vladpm publish`. Скрипты из раздела `[скрипты]` запускает `vladpm run имя`. В площадке есть панель «Пакеты» (📦): поиск по реестру и установка в хранилище страницы.
+
+```
+vladpm init [папка] [--lang …]          новый проект
+vladpm install | i                      поставить всё из vladx.toml (держится за vladx.lock)
+vladpm add имя[@диапазон] …             добавить зависимость (semver: ^1.2, ~1.2.3, >=1 <2, 1.x)
+vladpm remove | rm имя …                убрать
+vladpm update | up [имя …]              обновить в пределах диапазонов
+vladpm list | ls                        дерево установленного
+vladpm run скрипт [-- аргументы]        скрипт из [скрипты]
+vladpm search слово · info имя          реестр
+vladpm adduser | login | logout | whoami
+vladpm publish · unpublish имя@версия (72 ч) · deprecate имя@диапазон "почему"
+```
+
+Реестр по умолчанию — `https://vladinc.ru/vladx`; свой — `--registry`, `VLADPM_REGISTRY` или поле «реестр» в `vladx.toml`.
 
 ## Команды
 
@@ -87,6 +119,7 @@ vladx check <файл> [--lang ru|it|scn]                        только д
 vladx keywords [--lang ru|it|scn]                            словарь форм
 vladx fmt <файл> [--to ru|it|scn] [--write]                  канонический вид / перевод на другой язык
 vladx serve [--port 8000]                                    площадка, прокси и ИИ для .vlhmn
+vladx pm <команда>                                           менеджер пакетов (= vladpm)
 vladx hmn-eval <папка>                                       оценка перевода .vlhmn на наборе фраз
 ```
 
@@ -116,7 +149,7 @@ cargo test
 bash scripts/test-all.sh
 ```
 
-Скрипт прогоняет `cargo test`, проверку словаря, все примеры, схему AST, негативные случаи, флаги файлов и сети и печатает «ВСЁ ЗЕЛЁНОЕ». Браузерный сценарий в Chromium (OPFS, перезагрузка, `спроси`, сеть напрямую и через прокси):
+Скрипт прогоняет `cargo test`, проверку словаря, все примеры, схему AST, негативные случаи, флаги файлов и сети, полный цикл vladpm с реестром под `php -S` и печатает «ВСЁ ЗЕЛЁНОЕ». Браузерный сценарий в Chromium (OPFS, перезагрузка, `спроси`, сеть напрямую и через прокси):
 
 ```bash
 node tests/browser/files-net.mjs
@@ -130,8 +163,9 @@ crates/
   vladx-syntax    словарь → лексер → парсер → статические проверки
   vladx-runtime   интерпретатор, stdlib (9 модулей), трейт Host
   vladx-hmn       .vlhmn: промпт, проверка ответа ИИ, повтор, кэш
+  vladx-pm        vladpm: манифест, semver, зависимости, vladx.lock, установка
   vladx-wasm      C-ABI для браузера (без wasm-bindgen)
-  vladx-cli       vladx run/parse/check/keywords/serve
+  vladx-cli       vladx run/parse/check/keywords/serve, vladpm
   xtask           проверка словаря: cargo run -p xtask
 spec/
   keywords.toml   единственный источник ключевых слов
@@ -140,7 +174,7 @@ spec/
 site/             площадка: один HTML со встроенным WASM
 examples/         примеры на ru, it, scn (проверяются тестами)
 tests/            негативные случаи и браузерный сценарий
-deploy/shared/    PHP для shared-хостинга: файлы, сеть и ИИ площадки (ключ и модель — на сервере)
+deploy/shared/    PHP для shared-хостинга: файлы, сеть и ИИ площадки, реестр пакетов vladpm и его сайт
 docs/HANDOVER.md  исходное техническое задание
 ```
 
@@ -148,6 +182,6 @@ docs/HANDOVER.md  исходное техническое задание
 
 ## Чего пока нет
 
-Импорт модулей `.vlhmn`, менеджер пакетов. Слова `it` и `scn` ждут проверки носителем. Подробнее — `spec/SPEC.md`, §13.
+Импорт модулей `.vlhmn`. Слова `it` и `scn` (в том числе слова `vladx.toml`) ждут проверки носителем. Подробнее — `spec/SPEC.md`, §13.
 
 Лицензия — MIT.
