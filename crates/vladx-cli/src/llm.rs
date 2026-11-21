@@ -5,10 +5,10 @@
 //!    живут на сервере (deploy/shared/vladx-llm.php или `vladx serve` → /llm), клиенту ключ не нужен.
 //!    `VLADX_LLM_PROXY_TOKEN` — токен, если сервер его требует.
 //! 2. Напрямую в Polza.ai (OpenAI-совместимый API):
-//!   VLADX_LLM_KEY | POLZA_API_KEY | POLZA — ключ (Authorization: Bearer …)
-//!   VLADX_LLM_MODEL  — модель (по умолчанию anthropic/claude-haiku-5.5: дешёвая модель для разбора, §15.1)
-//!   VLADX_LLM_URL    — адрес (по умолчанию https://polza.ai/api/v1/chat/completions)
-//!   VLADX_LLM_EFFORT — reasoning_effort (по умолчанию low; пусто — не передавать)
+//!    VLADX_LLM_KEY | POLZA_API_KEY | POLZA — ключ (Authorization: Bearer …)
+//!    VLADX_LLM_MODEL  — модель (по умолчанию anthropic/claude-haiku-5.5: дешёвая модель для разбора, §15.1)
+//!    VLADX_LLM_URL    — адрес (по умолчанию https://polza.ai/api/v1/chat/completions)
+//!    VLADX_LLM_EFFORT — reasoning_effort (по умолчанию low; пусто — не передавать)
 
 use std::path::PathBuf;
 use vladx_hmn::{Cache, Llm, Msg};
