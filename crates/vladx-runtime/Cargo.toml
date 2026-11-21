@@ -8,5 +8,6 @@ license.workspace = true
 [dependencies]
 vladx-ast = { path = "../vladx-ast" }
 vladx-syntax = { path = "../vladx-syntax" }
+vladx-pm = { path = "../vladx-pm" }
 indexmap = { workspace = true }
 serde_json = { workspace = true }

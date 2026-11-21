@@ -60,6 +60,8 @@ pub struct Interp<'h> {
     loading: Vec<String>,
     /// Файл исполняемого кода (None — главная программа).
     cur_file: Option<Rc<str>>,
+    /// Язык файлов из пакетов (у пакета свой язык в его vladx.toml).
+    file_langs: HashMap<String, vladx_syntax::Lang>,
 }
 
 const MAX_WARNINGS: usize = 100;
@@ -87,6 +89,7 @@ impl<'h> Interp<'h> {
             modules: HashMap::new(),
             loading: vec![],
             cur_file: None,
+            file_langs: HashMap::new(),
         };
         crate::stdlib::install(&me.globals);
         me
@@ -514,15 +517,96 @@ impl<'h> Interp<'h> {
         Ok(())
     }
 
+    /// Язык исполняемого сейчас файла.
+    fn cur_lang(&self) -> vladx_syntax::Lang {
+        self.cur_file.as_deref().and_then(|f| self.file_langs.get(f).copied()).unwrap_or(self.lang)
+    }
+
+    fn with_ext(base: String) -> Vec<String> {
+        if base.ends_with(".vlstd") {
+            vec![base]
+        } else {
+            vec![base.clone(), format!("{base}.vlstd")]
+        }
+    }
+
+    /// `из "имя-пакета"` / `из "@автор/имя/подпуть"`: ищем вверх по папкам
+    /// `пакеты/` (`pacchetti/`, `vladx_modules/`), как node_modules в Node.
+    /// Возвращает кандидатов-файлов и язык пакета.
+    fn find_package(&mut self, spec: &str, sp: Span) -> R<Option<(Vec<String>, vladx_syntax::Lang)>> {
+        let Some(dict) = self.dict.clone() else { return Ok(None) };
+        let parts: Vec<&str> = spec.split('/').collect();
+        let n = if spec.starts_with('@') { 2 } else { 1 };
+        if parts.len() < n {
+            return Ok(None);
+        }
+        let name = parts[..n].join("/");
+        let sub = parts[n..].join("/");
+        let mut mdirs = vladx_pm::manifest::modules_dir_names(&dict);
+        mdirs.push("vladx_modules".into());
+        let mut dir = self.cur_dir();
+        loop {
+            for md in &mdirs {
+                let root = normalize_path(&format!("{dir}/{md}/{name}"));
+                let Ok(toml) = self.host.read_code(&format!("{root}/{}", vladx_pm::manifest::FILE)) else { continue };
+                let m = match vladx_pm::manifest::parse(&toml, &dict) {
+                    Ok(m) => m,
+                    Err(e) => return fail_hint("E-MODULE-001", format!("Пакет «{name}» повреждён"), format!("{root}/{e}"), sp),
+                };
+                let lang = m.lang.unwrap_or(vladx_syntax::Lang::Ru);
+                let file = if sub.is_empty() {
+                    m.main.clone().unwrap_or_else(|| vladx_pm::bundle::default_main(&dict, lang))
+                } else {
+                    sub.clone()
+                };
+                return Ok(Some((Self::with_ext(normalize_path(&format!("{root}/{file}"))), lang)));
+            }
+            match dir.rsplit_once('/') {
+                Some((p, _)) => dir = p.to_string(),
+                None if !dir.is_empty() => dir = String::new(),
+                None => break,
+            }
+        }
+        Ok(None)
+    }
+
     fn load_module(&mut self, spec: &str, sp: Span) -> R<(String, Rc<Env>)> {
         if spec.ends_with(".vlhmn") {
             return fail("E-MODULE-001", format!("Импорт «{spec}» не поддерживается: модулем может быть только .vlstd"), sp);
         }
-        let base = normalize_path(&format!("{}/{}", self.cur_dir(), spec));
-        let mut candidates = vec![base.clone()];
-        if !base.ends_with(".vlstd") {
-            candidates.push(format!("{base}.vlstd"));
-        }
+        let local = spec.starts_with("./") || spec.starts_with("../") || spec.starts_with('/');
+        let mut mod_lang = self.cur_lang();
+        let candidates = if local {
+            Self::with_ext(normalize_path(&format!("{}/{}", self.cur_dir(), spec)))
+        } else {
+            match self.find_package(spec, sp)? {
+                Some((c, l)) => {
+                    mod_lang = l;
+                    c
+                }
+                None => {
+                    // Строго, как в Node: без «./» — только пакет. Подсказка, если есть такой файл.
+                    let near = Self::with_ext(normalize_path(&format!("{}/{}", self.cur_dir(), spec)));
+                    let exists = near.iter().any(|c| self.modules.contains_key(c) || self.host.read_code(c).is_ok());
+                    let shown = spec.trim_end_matches(".vlstd");
+                    return if exists {
+                        fail_hint(
+                            "E-MODULE-001",
+                            format!("Пакет «{spec}» не найден"),
+                            format!("это файл рядом? Свои файлы подключаются с «./»: напишите \"./{shown}\""),
+                            sp,
+                        )
+                    } else {
+                        fail_hint(
+                            "E-MODULE-001",
+                            format!("Пакет «{spec}» не найден"),
+                            format!("установите его: vladpm add {spec}; свой файл подключается с «./»: \"./{shown}\""),
+                            sp,
+                        )
+                    };
+                }
+            }
+        };
         if let Some(id) = candidates.iter().find(|c| self.modules.contains_key(*c)) {
             return Ok((id.clone(), self.modules[id].clone()));
         }
@@ -541,7 +625,7 @@ impl<'h> Interp<'h> {
             return fail_hint(
                 "E-MODULE-001",
                 format!("Модуль «{spec}» не найден (искал: {})", candidates.join(", ")),
-                format!("путь считается от папки этого файла; {why}"),
+                if local { format!("путь считается от папки этого файла; {why}") } else { format!("файла нет в пакете; {why}") },
                 sp,
             );
         };
@@ -558,7 +642,7 @@ impl<'h> Interp<'h> {
         let Some(dict) = self.dict.clone() else {
             return fail("E-MODULE-001", "импорт модулей недоступен: нет словаря проекта", sp);
         };
-        let (prog, diags) = vladx_syntax::analyze(&src, self.lang, &dict, crate::GLOBAL_NAMES);
+        let (prog, diags) = vladx_syntax::analyze(&src, mod_lang, &dict, crate::GLOBAL_NAMES);
         if let Some(mut d) = diags.into_iter().find(|d| d.is_error()) {
             d.file = Some(id.clone());
             return Err(Ctl::Fail(d));
@@ -566,6 +650,9 @@ impl<'h> Interp<'h> {
         let prog = prog.expect("без ошибок разбора AST есть");
         let menv = Env::new(None, None);
         crate::stdlib::install(&menv);
+        if mod_lang != self.lang {
+            self.file_langs.insert(id.clone(), mod_lang);
+        }
         self.loading.push(id.clone());
         let saved = self.cur_file.replace(Rc::from(id.as_str()));
         let r = self.exec_stmts(&prog.body, &menv);

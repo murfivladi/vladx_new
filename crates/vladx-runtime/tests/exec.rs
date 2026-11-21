@@ -396,7 +396,7 @@ fn import_names_from_project_files() {
         ("утилиты.vlstd", "функция удвой(x) {\n  верни x * 2\n}\nпусть версия будет \"1.0\""),
         ("главная.vlstd", ""),
     ]);
-    let src = "из \"утилиты\" возьми удвой, версия\nскажи удвой(21)\nскажи версия";
+    let src = "из \"./утилиты\" возьми удвой, версия\nскажи удвой(21)\nскажи версия";
     let (r, _) = run_full(src, Lang::Ru, h, Options::default());
     assert!(r.ok, "{:?}", r.diagnostics);
     assert_eq!(r.stdout, ["42", "1.0"]);
@@ -409,7 +409,7 @@ fn import_paths_are_relative_to_the_importing_file() {
         ("общее.vlstd", "скажи \"загружено общее\"\nпусть разделитель будет \" | \""),
         ("lib/строки.vlstd", "из \"../общее.vlstd\" возьми разделитель\nфункция склей(а, б) {\n  верни а + разделитель + б\n}"),
     ]);
-    let src = "из \"lib/строки\" возьми склей\nиз \"общее\" возьми разделитель\nскажи склей(\"а\", \"б\")";
+    let src = "из \"./lib/строки\" возьми склей\nиз \"./общее\" возьми разделитель\nскажи склей(\"а\", \"б\")";
     let (r, _) = run_full(src, Lang::Ru, h, Options::default());
     assert!(r.ok, "{:?}", r.diagnostics);
     assert_eq!(r.stdout, ["загружено общее", "а | б"]);
@@ -418,29 +418,29 @@ fn import_paths_are_relative_to_the_importing_file() {
 #[test]
 fn import_errors_are_clear() {
     let h = || project(&[
-        ("а.vlstd", "из \"б\" возьми y\nпусть x будет 1"),
-        ("б.vlstd", "из \"а\" возьми x\nпусть y будет 2"),
+        ("а.vlstd", "из \"./б\" возьми y\nпусть x будет 1"),
+        ("б.vlstd", "из \"./а\" возьми x\nпусть y будет 2"),
         ("м.vlstd", "пусть открыто будет 1\nпусть _скрыто будет 2"),
         ("плохой.vlstd", "пусть z будет\n"),
     ]);
     let code = |src: &str| run_full(src, Lang::Ru, h(), Options::default()).0.diagnostics[0].clone();
-    let d = code("из \"нет\" возьми x");
+    let d = code("из \"./нет\" возьми x");
     assert_eq!(d.code, "E-MODULE-001");
-    let d = code("из \"а\" возьми x");
+    let d = code("из \"./а\" возьми x");
     assert_eq!(d.code, "E-MODULE-003");
     assert!(d.message.contains("а.vlstd → б.vlstd → а.vlstd"), "{}", d.message);
-    let d = code("из \"м\" возьми нигде");
+    let d = code("из \"./м\" возьми нигде");
     assert_eq!((d.code.as_str(), d.hint.as_deref()), ("E-MODULE-002", Some("есть: открыто")));
-    assert_eq!(code("из \"м\" возьми _скрыто").code, "E-MODULE-002");
+    assert_eq!(code("из \"./м\" возьми _скрыто").code, "E-MODULE-002");
     // синтаксическая ошибка в модуле указывает на его файл
-    let d = code("из \"плохой\" возьми z");
+    let d = code("из \"./плохой\" возьми z");
     assert_eq!(d.file.as_deref(), Some("плохой.vlstd"));
 }
 
 #[test]
 fn runtime_error_inside_module_points_to_module_file() {
     let h = project(&[("мат.vlstd", "функция дели(а, б) {\n  верни а / б\n}")]);
-    let (r, _) = run_full("из \"мат\" возьми дели\nскажи дели(1, 0)", Lang::Ru, h, Options::default());
+    let (r, _) = run_full("из \"./мат\" возьми дели\nскажи дели(1, 0)", Lang::Ru, h, Options::default());
     let d = &r.diagnostics[0];
     assert_eq!((d.code.as_str(), d.file.as_deref(), d.line), ("E-MATH-001", Some("мат.vlstd"), 2));
     // а ошибка в главной программе — без файла
@@ -452,10 +452,44 @@ fn runtime_error_inside_module_points_to_module_file() {
 fn modules_have_their_own_globals_and_need_no_file_permission() {
     let h = project(&[("счёт.vlstd", "изменяй n станет 0\nфункция следующий() {\n  n станет n + 1\n  верни n\n}")]);
     // n в главной программе — другое имя; разрешение «файлы» для кода не нужно (как require в Node)
-    let src = "из \"счёт\" возьми следующий\nизменяй n станет 100\nследующий()\nскажи следующий()\nскажи n";
+    let src = "из \"./счёт\" возьми следующий\nизменяй n станет 100\nследующий()\nскажи следующий()\nскажи n";
     let opts = Options { files: false, ..Options::default() };
     let (r, h) = run_full(src, Lang::Ru, h, opts);
     assert!(r.ok, "{:?}", r.diagnostics);
     assert_eq!(r.stdout, ["2", "100"]);
     assert!(h.asks.is_empty());
+}
+
+// ───────────── пакеты: из "имя-пакета" возьми … ─────────────
+
+#[test]
+fn bare_import_finds_package_walking_up() {
+    let h = project(&[
+        ("пакеты/цвета/vladx.toml", "[проект]\nимя = \"цвета\"\nверсия = \"1.0.0\"\nглавный = \"цвета.vlstd\"\n"),
+        ("пакеты/цвета/цвета.vlstd", "из \"./внутри\" возьми база\nиз \"@влад/кисть\" возьми кисть\nфункция красный() {\n  верни база + \"красный \" + кисть\n}"),
+        ("пакеты/цвета/внутри.vlstd", "пусть база будет \"цвет: \""),
+        ("пакеты/цвета/доп/серый.vlstd", "пусть серый будет \"серый\""),
+        // итальянский пакет в русском проекте: у пакета свой язык
+        ("пакеты/@влад/кисть/vladx.toml", "[progetto]\nnome = \"@влад/кисть\"\nversione = \"0.1.0\"\nlingua = \"it\"\nprincipale = \"pennello.vlstd\"\n"),
+        ("пакеты/@влад/кисть/pennello.vlstd", "sia kist = \"(кисть)\"\nfunzione kisti() {\n  rendi kist\n}\nsia кисть = kisti()"),
+        ("src/главная.vlstd", ""),
+    ]);
+    let src = "из \"цвета\" возьми красный\nиз \"цвета/доп/серый\" возьми серый\nскажи красный()\nскажи серый";
+    let opts = Options { main_dir: "src".into(), ..Options::default() };
+    let (r, _) = run_full(src, Lang::Ru, h, opts);
+    assert!(r.ok, "{:?}", r.diagnostics);
+    assert_eq!(r.stdout, ["цвет: красный (кисть)", "серый"]);
+}
+
+#[test]
+fn bare_import_is_strict_like_node() {
+    let h = || project(&[("утилиты.vlstd", "пусть x будет 1")]);
+    let d = run_full("из \"утилиты\" возьми x", Lang::Ru, h(), Options::default()).0.diagnostics[0].clone();
+    assert_eq!(d.code, "E-MODULE-001");
+    assert!(d.message.contains("Пакет «утилиты» не найден"), "{}", d.message);
+    assert!(d.hint.as_deref().unwrap_or("").contains("\"./утилиты\""), "{:?}", d.hint);
+    let d = run_full("из \"нет-такого\" возьми x", Lang::Ru, h(), Options::default()).0.diagnostics[0].clone();
+    assert!(d.hint.as_deref().unwrap_or("").contains("vladpm add нет-такого"), "{:?}", d.hint);
+    let ok = run_full("из \"./утилиты\" возьми x\nскажи x", Lang::Ru, h(), Options::default()).0;
+    assert_eq!(ok.stdout, ["1"]);
 }

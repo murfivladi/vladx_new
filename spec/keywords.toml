@@ -320,3 +320,105 @@ id = "function"
 ru = ["функция"]
 it = ["funzione"]
 scn = []
+
+# ═════════════ слова манифеста vladx.toml (разделы и поля) ═════════════
+# Не зарезервированы в языке: читаются только в vladx.toml. Ключ можно писать
+# на любом из языков или нейтральным id (как в старых проектах: [project], lang).
+# Сицилийские формы — черновик, ждут носителя (§14).
+
+[[manifest]]
+id = "project"
+ru = ["проект"]
+it = ["progetto"]
+scn = ["pruggettu"]
+
+[[manifest]]
+id = "name"
+ru = ["имя", "название"]
+it = ["nome"]
+scn = ["nomu"]
+
+[[manifest]]
+id = "version"
+ru = ["версия"]
+it = ["versione"]
+scn = ["virsioni"]
+
+[[manifest]]
+id = "description"
+ru = ["описание"]
+it = ["descrizione"]
+scn = ["discrizzioni"]
+
+[[manifest]]
+id = "author"
+ru = ["автор"]
+it = ["autore"]
+scn = ["auturi"]
+
+[[manifest]]
+id = "license"
+ru = ["лицензия"]
+it = ["licenza"]
+scn = ["licenza"]
+
+[[manifest]]
+id = "lang"
+ru = ["язык"]
+it = ["lingua"]
+scn = ["lingua"]
+
+[[manifest]]
+id = "main"
+ru = ["главный", "вход"]
+it = ["principale"]
+scn = ["principali"]
+
+[[manifest]]
+id = "registry"
+ru = ["реестр"]
+it = ["registro"]
+scn = ["registru"]
+
+[[manifest]]
+id = "permissions"
+ru = ["права"]
+it = ["permessi"]
+scn = ["pirmissi"]
+
+[[manifest]]
+id = "files"
+ru = ["файлы"]
+it = ["file"]
+scn = ["file"]
+
+[[manifest]]
+id = "net"
+ru = ["сеть"]
+it = ["rete"]
+scn = ["riti"]
+
+[[manifest]]
+id = "restrict_files"
+ru = ["только_проект"]
+it = ["solo_progetto"]
+scn = ["sulu_pruggettu"]
+
+[[manifest]]
+id = "dependencies"
+ru = ["зависимости"]
+it = ["dipendenze"]
+scn = ["dipinnenzi"]
+
+[[manifest]]
+id = "scripts"
+ru = ["скрипты"]
+it = ["script"]
+scn = ["script"]
+
+# Папка установленных пакетов (как node_modules).
+[[manifest]]
+id = "modules_dir"
+ru = ["пакеты"]
+it = ["pacchetti"]
+scn = ["pacchetti"]

@@ -68,6 +68,8 @@ pub struct Dictionary {
     pub default_lang: Lang,
     pub entries: Vec<Entry>,
     pub types: Vec<TypeEntry>,
+    /// Слова манифеста vladx.toml (разделы и поля) — `[[manifest]]`.
+    pub manifest: Vec<TypeEntry>,
     phrases: HashMap<Lang, HashMap<Vec<String>, Vec<Meaning>>>,
     max_words: usize,
 }
@@ -146,6 +148,15 @@ impl Dictionary {
             }
         }
 
+        let mut manifest = vec![];
+        if let Some(arr) = root.get("manifest").and_then(|v| v.as_array()) {
+            for item in arr {
+                let t = item.as_table().ok_or("[[manifest]]: ожидалась таблица")?;
+                let id = t.get("id").and_then(|v| v.as_str()).ok_or("[[manifest]] без id")?.to_string();
+                manifest.push(TypeEntry { forms: lang_forms(t, &id)?, id });
+            }
+        }
+
         let mut phrases: HashMap<Lang, HashMap<Vec<String>, Vec<Meaning>>> = HashMap::new();
         let mut max_words = 1;
         for l in Lang::ALL {
@@ -171,7 +182,7 @@ impl Dictionary {
                 }
             }
         }
-        let d = Dictionary { schema_version, default_lang, entries, types, phrases, max_words };
+        let d = Dictionary { schema_version, default_lang, entries, types, manifest, phrases, max_words };
         let errs: Vec<String> = d.validate().into_iter().filter(|p| !p.starts_with("предупреждение")).collect();
         if !errs.is_empty() {
             return Err(errs.join("; "));
@@ -270,6 +281,36 @@ impl Dictionary {
             .iter()
             .find(|t| t.forms[&lang].iter().any(|f| norm(f) == w) || t.id == w)
             .map(|t| t.id.clone())
+    }
+
+    /// Нейтральный id слова манифеста: форма любого языка или сам id.
+    pub fn manifest_id(&self, word: &str) -> Option<String> {
+        let w = norm(word);
+        self.manifest
+            .iter()
+            .find(|t| t.id == w || Lang::ALL.iter().any(|l| t.forms[l].iter().any(|f| norm(f) == w)))
+            .map(|t| t.id.clone())
+    }
+
+    /// Слово манифеста на языке проекта (первая форма; нет формы — id).
+    pub fn manifest_word(&self, lang: Lang, id: &str) -> String {
+        self.manifest
+            .iter()
+            .find(|t| t.id == id)
+            .and_then(|t| t.forms[&lang].first().cloned())
+            .unwrap_or_else(|| id.to_string())
+    }
+
+    /// Все формы слова манифеста на всех языках (например, имена папки пакетов).
+    pub fn manifest_forms(&self, id: &str) -> Vec<String> {
+        let mut v: Vec<String> = self
+            .manifest
+            .iter()
+            .filter(|t| t.id == id)
+            .flat_map(|t| Lang::ALL.iter().flat_map(move |l| t.forms[l].clone()))
+            .collect();
+        v.dedup();
+        v
     }
 
     /// Имена типов для подсказки в сообщении об ошибке.

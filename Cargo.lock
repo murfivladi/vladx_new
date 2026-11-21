@@ -733,11 +733,13 @@ dependencies = [
 name = "vladx-cli"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "serde_json",
  "toml",
  "ureq",
  "vladx-ast",
  "vladx-hmn",
+ "vladx-pm",
  "vladx-runtime",
  "vladx-syntax",
 ]
@@ -755,12 +757,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "vladx-pm"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "toml",
+ "vladx-syntax",
+]
+
+[[package]]
 name = "vladx-runtime"
 version = "0.1.0"
 dependencies = [
  "indexmap",
  "serde_json",
  "vladx-ast",
+ "vladx-pm",
  "vladx-syntax",
 ]
 

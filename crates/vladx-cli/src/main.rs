@@ -3,6 +3,7 @@
 mod hmncmd;
 mod host;
 mod llm;
+mod pm;
 mod project;
 mod serve;
 
@@ -24,6 +25,7 @@ const USAGE: &str = "vladx — интерпретатор VladX (v0.1)
   vladx hmn-eval <папка> [--lang …]                           проверка перевода .vlhmn на наборе фраз
   vladx keywords [--lang ru|it|scn]                           словарь форм
   vladx serve [--port 8000] [--root <папка>] [--files <папка>] площадка, сеть, файлы и ИИ для неё
+  vladx pm <команда>                                          менеджер пакетов (= vladpm): install, add, publish…
 
   по умолчанию открыто всё (как в Node): любые файлы и сеть;
   сузить: --no-files, --no-net, --restrict-files (только папка программы)
@@ -127,6 +129,15 @@ fn load_source(file: &str) -> Result<String, String> {
 }
 
 fn main() -> ExitCode {
+    // `vladx pm …` — то же, что `vladpm …`
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    if argv.first().map(|s| s.as_str()) == Some("pm") {
+        if argv.len() == 1 {
+            println!("{}", pm::USAGE);
+            return ExitCode::SUCCESS;
+        }
+        return pm::exit(argv[1..].to_vec());
+    }
     let a = match parse_args() {
         Ok(a) => a,
         Err(e) => {

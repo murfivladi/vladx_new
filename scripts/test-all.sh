@@ -74,9 +74,59 @@ for l in ru it scn; do
 done
 mkdir -p "$TMP/proj-ru/lib"
 printf 'из "../утилиты" возьми приветствие\nфункция сломай() {\n  верни 1 / 0\n}\n' > "$TMP/proj-ru/lib/м.vlstd"
-printf 'из "lib/м" возьми сломай\nсломай()\n' > "$TMP/proj-ru/т.vlstd"
+printf 'из "./lib/м" возьми сломай\nсломай()\n' > "$TMP/proj-ru/т.vlstd"
 out="$("$VX" run "$TMP/proj-ru/т.vlstd" 2>&1)"
 has "$out" "lib/м.vlstd:3:11  E-MATH-001" && ok "ошибка в модуле — с файлом и строкой модуля" || bad "ошибка модуля: $out"
+
+echo "== vladpm: реестр, публикация, установка"
+PM="$(dirname "$VX")/vladpm"
+if command -v php >/dev/null; then
+  R="$TMP/reg"; mkdir -p "$R/www" "$R/data"
+  cp deploy/shared/vladx-common.php deploy/shared/vladpm-registry.php "$R/www/"
+  echo "<?php return ['data_dir' => '$R/data'];" > "$R/www/config.php"
+  PORT=$((20000 + RANDOM % 20000))
+  php -S "127.0.0.1:$PORT" -t "$R/www" >"$R/php.log" 2>&1 & PHPPID=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s "http://127.0.0.1:$PORT/vladpm-registry.php" >/dev/null && break; sleep 0.3; done
+  export VLADPM_CONFIG="$R/rc.json" VLADPM_REGISTRY="http://127.0.0.1:$PORT" NO_PROXY="127.0.0.1,localhost"
+  (
+    cd "$R"
+    "$PM" init lib --lang ru >/dev/null
+    cd lib
+    sed -i 's/^имя = .*/имя = "@тест\/крик"/' vladx.toml
+    printf 'функция крик(т) {\n  верни т + "!"\n}\n' > главная.vlstd
+    echo "# Крик" > README.md
+    VLADPM_USER=тест VLADPM_PASSWORD=пароль-123 "$PM" adduser >/dev/null
+  ) && ok "vladpm adduser" || bad "vladpm adduser"
+  has "$(cd "$R/lib" && "$PM" whoami 2>&1)" "тест" && ok "vladpm whoami" || bad "whoami"
+  has "$(cd "$R/lib" && "$PM" publish 2>&1)" "@тест/крик@1.0.0" && ok "vladpm publish (@область/имя кириллицей)" || bad "publish"
+  has "$(cd "$R/lib" && "$PM" publish 2>&1)" "уже публиковался" && ok "повторная версия отклонена" || bad "повтор версии"
+  "$VX" pm init "$R/app" --lang it >/dev/null
+  out="$(cd "$R/app" && "$VX" pm add @тест/крик 2>&1)"
+  has "$out" "+ @тест/крик@1.0.0" && [ -f "$R/app/pacchetti/@тест/крик/главная.vlstd" ] && ok "vladx pm add → pacchetti/ (папка на языке проекта)" || bad "add: $out"
+  has "$(cat "$R/app/vladx.toml")" '[dipendenze]' && has "$(cat "$R/app/vladx.lock")" '"version": "1.0.0"' && ok "vladx.toml [dipendenze] и vladx.lock" || bad "манифест/lock"
+  printf 'da "@тест/крик" prendi крик\ndì крик("ciao")\n' > "$R/app/principale.vlstd"
+  [ "$(cd "$R/app" && "$VX" run 2>&1)" = "ciao!" ] && ok "итальянский проект импортирует русский пакет" || bad "импорт пакета: $(cd "$R/app" && "$VX" run 2>&1)"
+  printf 'da "utili" prendi saluto\n' > "$R/app/b.vlstd"
+  has "$("$VX" run "$R/app/b.vlstd" 2>&1)" '"./utili"' && ok "без «./» — только пакет, с подсказкой" || bad "строгий импорт"
+  printf '\n[script]\nprova = "vladx run principale.vlstd"\n' >> "$R/app/vladx.toml"
+  has "$(cd "$R/app" && "$PM" run prova 2>&1)" "ciao!" && ok "vladpm run (скрипты, vladx в PATH)" || bad "run"
+  (cd "$R/lib" && sed -i 's/^версия = .*/версия = "1.1.0"/' vladx.toml && "$PM" publish >/dev/null)
+  has "$(cd "$R/app" && "$PM" install 2>&1)" "всё уже установлено" && ok "install держится за vladx.lock" || bad "lock"
+  has "$(cd "$R/app" && "$PM" update 2>&1)" "1.0.0 → 1.1.0" && ok "vladpm update" || bad "update"
+  has "$(cd "$R/app" && "$PM" search крик 2>&1)" "@тест/крик@1.1.0" && ok "vladpm search" || bad "search"
+  (cd "$R/app" && "$PM" deprecate @тест/крик@1.0.0 "берите 1.1" >/dev/null)
+  has "$(cd "$R/app" && "$PM" info @тест/крик 2>&1)" "1.0.0  — устарел: берите 1.1" && ok "vladpm deprecate / info" || bad "deprecate"
+  has "$(cd "$R/app" && "$PM" unpublish @тест/крик@1.1.0 2>&1)" "снято 1.1.0" && ok "vladpm unpublish (в течение 72 ч)" || bad "unpublish"
+  out="$(cd "$R/app" && "$PM" add @тест/крик@^1.1.0 2>&1)"
+  has "$out" "нет версии" && ok "снятая версия больше не ставится" || bad "после unpublish: $out"
+  (cd "$R/app" && "$PM" rm @тест/крик >/dev/null) && [ ! -d "$R/app/pacchetti/@тест" ] && ok "vladpm rm убирает пакет" || bad "rm"
+  VLADPM_USER=другой VLADPM_PASSWORD=пароль-456 "$PM" adduser >/dev/null
+  has "$(cd "$R/lib" && sed -i 's/^версия = .*/версия = "2.0.0"/' vladx.toml && "$PM" publish 2>&1)" "область @тест" && ok "чужая область @автор/ отклонена" || bad "права на область"
+  kill $PHPPID 2>/dev/null
+  unset VLADPM_CONFIG VLADPM_REGISTRY
+else
+  echo "       (реестр пропущен: нет php)"
+fi
 
 echo "== негативные случаи"
 for pair in "01-order:E-ORDER-001" "02-unclosed-block:E-SYNTAX-003" "03-mutate-const:E-NAME-002" "04-unknown-word:E-SYNTAX-016"; do

@@ -5,6 +5,7 @@ members = [
     "crates/vladx-syntax",
     "crates/vladx-runtime",
     "crates/vladx-hmn",
+    "crates/vladx-pm",
     "crates/vladx-wasm",
     "crates/vladx-cli",
     "crates/xtask",

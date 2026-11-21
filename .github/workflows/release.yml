@@ -86,8 +86,8 @@ jobs:
         run: |
           name="vladx-${{ matrix.target }}"
           mkdir -p "dist/$name"
-          exe=vladx; [[ "${{ matrix.target }}" == *windows* ]] && exe=vladx.exe
-          cp "target/${{ matrix.target }}/release/$exe" "dist/$name/"
+          ext=; [[ "${{ matrix.target }}" == *windows* ]] && ext=.exe
+          cp "target/${{ matrix.target }}/release/vladx$ext" "target/${{ matrix.target }}/release/vladpm$ext" "dist/$name/"
           cp README.md LICENSE "dist/$name/"
           cp -r examples "dist/$name/"
           cd dist
@@ -100,6 +100,7 @@ jobs:
           exe=vladx; [[ "${{ matrix.target }}" == *windows* ]] && exe=vladx.exe
           "target/${{ matrix.target }}/release/$exe" --version
           "target/${{ matrix.target }}/release/$exe" run examples/ru/10-fizzbuzz.vlstd
+          "target/${{ matrix.target }}/release/vladpm${exe#vladx}" help
       - uses: actions/upload-artifact@v4
         with:
           name: vladx-${{ matrix.target }}
