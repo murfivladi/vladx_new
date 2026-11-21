@@ -16,3 +16,4 @@ vladx-runtime = { path = "../vladx-runtime" }
 vladx-hmn = { path = "../vladx-hmn" }
 ureq = { version = "2", default-features = false, features = ["tls", "native-certs", "gzip"] }
 serde_json = { workspace = true }
+toml = { workspace = true }

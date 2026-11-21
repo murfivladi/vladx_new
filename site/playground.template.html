@@ -506,6 +506,7 @@ async function handle(m) {
       const [ip, il] = put((m.answers || []).join('\n')); ex.vx_set_input(ip, il); ex.vx_free(ip, il);
       ex.vx_set_interactive(m.askMode == null ? 1 : m.askMode);
       ex.vx_set_permissions(m.perms);
+      const [dp, dl] = put(m.mainDir || ''); ex.vx_set_main_dir(dp, dl); ex.vx_free(dp, dl);
       const [sp, sl] = put(m.code);
       const t0 = performance.now();
       if (m.type === 'run') ex.vx_run(sp, sl, m.lang, m.maxSteps || 0);
@@ -780,7 +781,7 @@ function renderHighlight() {
     }
   });
   for (const d of [...liveDiags, ...runDiags]) {
-    if (!d.line || !marks[d.line - 1]) continue;
+    if (!d.line || !marks[d.line - 1] || (d.file && d.file !== (cur && cur.path))) continue;
     const row = marks[d.line - 1]; const cls = d.severity === 'warning' ? 'warn' : 'err';
     const from = Math.max(0, d.col - 1), to = Math.min(row.length, from + Math.max(1, d.len || 1));
     if (from >= row.length) { if (row.length) row[row.length - 1] = cls; continue; }
@@ -837,11 +838,25 @@ function renderProblems() {
   if (!all.length) { ul.innerHTML = '<li class="empty">Проблем нет.</li>'; return; }
   for (const d of all) {
     const li = document.createElement('li');
-    li.innerHTML = '<span class="sev ' + (d.severity === 'warning' ? 'warning">⚠' : 'error">✕') + '</span><span>' + esc(d.message) +
+    li.innerHTML = '<span class="sev ' + (d.severity === 'warning' ? 'warning">⚠' : 'error">✕') + '</span><span>' + (d.file ? '<span class="code">' + esc(d.file) + '</span> ' : '') + esc(d.message) +
       (d.hint ? ' <span class="code">— ' + esc(d.hint) + '</span>' : '') + '</span><span class="code">' + esc(d.code) + '</span><span class="where">' + (d.line ? 'стр ' + d.line + ':' + d.col : '') + '</span>';
-    if (d.line) li.onclick = () => gotoPos(d.line, d.col);
+    if (d.file) li.onclick = () => openAt(d.file, d.line, d.col);
+    else if (d.line) li.onclick = () => gotoPos(d.line, d.col);
     ul.appendChild(li);
   }
+}
+// Открыть файл хранилища (модуль) и перейти к строке.
+async function openAt(path, line, col) {
+  let d = docs.find(x => x.path === path);
+  if (!d) {
+    try {
+      const text = await storage.read(path);
+      const m = path.match(/^(.*?)(?:\.(vlstd|vlhmn))?$/);
+      d = newDoc({ name: m[1], fmt: m[2] || 'vlstd', lang: lang(), code: text, source: 'storage', path, saved: text });
+    } catch (e) { status('не открыт: ' + path); return; }
+  }
+  openDoc(d);
+  if (line) setTimeout(() => gotoPos(line, col), 0);
 }
 function gotoPos(line, col) {
   const lines = code.value.split('\n'); let pos = 0;
@@ -1018,17 +1033,19 @@ function renderResult(r, opts) {
   runDiags = [];
   for (const g of r.diagnostics || []) {
     const d = document.createElement('div'); d.className = 'diag';
-    let t = (g.line ? 'стр ' + g.line + ':' + g.col + '  ' : '') + g.code + '  ' + g.message;
+    let t = (g.file ? g.file + ':' : '') + (g.line ? 'стр ' + g.line + ':' + g.col + '  ' : '') + g.code + '  ' + g.message;
     d.textContent = t;
-    if (g.line && src[g.line - 1] != null) {
+    if (g.line && !g.file && src[g.line - 1] != null) {
       const s = document.createElement('div'); s.className = 'src';
       s.textContent = '  ' + g.line + ' │ ' + src[g.line - 1] + '\n  ' + ' '.repeat(String(g.line).length) + ' │ ' + ' '.repeat(Math.max(0, g.col - 1)) + '^'.repeat(Math.max(1, g.len));
       d.appendChild(s);
     }
     if (g.hint) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = '  подсказка: ' + g.hint; d.appendChild(h); }
-    if (g.line && r.vlstd == null) d.onclick = () => gotoPos(g.line, g.col);
+    if (g.file) d.onclick = () => openAt(g.file, g.line, g.col);
+    else if (g.line && r.vlstd == null) d.onclick = () => gotoPos(g.line, g.col);
     out.appendChild(d);
-    if (r.vlstd == null && g.line) runDiags.push(Object.assign({ severity: 'error' }, g));
+    if (r.vlstd == null && g.line && !g.file) runDiags.push(Object.assign({ severity: 'error' }, g));
+    if (g.file) runDiags.push(Object.assign({ severity: 'error', elsewhere: true }, g));
   }
   if (r.storeError) out.appendChild(termLine('файлы не сохранены в хранилище: ' + r.storeError, 'warn'));
   if (!(opts && opts.waiting)) {
@@ -1101,8 +1118,19 @@ function setRunning(on, label) {
   running = on; $('run').disabled = on || !ready; $('stop').disabled = !on && !session;
   if (label) status(label);
 }
+// Как в IDE: перед запуском сохраняются изменённые файлы хранилища — их могут импортировать.
+async function saveDirtyModules() {
+  if (cur) cur.code = code.value;
+  for (const d of docs) {
+    if (d.dirty && d.path) {
+      try { await storage.write(d.path, d.code); d.saved = d.code; d.dirty = false; } catch (e) { /* покажет сама программа */ }
+    }
+  }
+  renderTabs(); saveDocs();
+}
 async function run(force) {
   if (!ready || running) return;
+  await saveDirtyModules();
   $('askpanel').hidden = true; $('lowconf').hidden = true; $('term-ask').hidden = true;
   showPanel('terminal');
   setRunning(true, 'выполняется…');
@@ -1151,6 +1179,7 @@ async function step() {
       answers: s.answers, fresh: s.answers.length === 0, time: s.time,
       askMode: LIVE ? 2 : 1, sab: inputSab, liveTime: LIVE, tz: new Date().getTimezoneOffset(),
       fsUrl: fs ? fs.url : '', ws: workspace(), fetchUrl: net ? net.url : '',
+      mainDir: cur && cur.path && cur.path.includes('/') ? cur.path.slice(0, cur.path.lastIndexOf('/')) : '',
     }));
     if (session !== s) return;
     r.result.interp = s.interp;

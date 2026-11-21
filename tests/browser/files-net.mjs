@@ -127,6 +127,15 @@ await page.waitForTimeout(50); await idle();
 out = await page.innerText('#output');
 check(7, 'спроси: два вопроса подряд, программа не перезапускалась', out.includes('как тебя зовут? Мария') && out.includes('здравствуй, Мария из Палермо') && out.split('начало').length === 2, out);
 
+// 7c. модули: программа пишет модуль и тут же его импортирует (как require после writeFileSync)
+out = await run('file.запиши("lib/мат.vlstd", "функция квадрат(x) \\{\\n  верни x * x\\n}\\nфункция сломай() \\{\\n  верни 1 / 0\\n}")\nиз "lib/мат" возьми квадрат, сломай\nскажи квадрат(9)\nсломай()');
+const modErr = await page.$eval('#output', el => [...el.querySelectorAll('.diag')].map(d => d.textContent).join('\n'));
+check('7c', 'импорт модуля из хранилища; ошибка в нём указывает на его файл и строку', out.includes('81') && modErr.includes('lib/мат.vlstd:стр 5') && modErr.includes('E-MATH-001'), out);
+await page.click('#output .diag');
+await page.waitForFunction(() => [...document.querySelectorAll('.tab.active')].some(t => t.textContent.includes('мат.vlstd')), null, { timeout: 10000 }).catch(() => {});
+check('7d', 'клик по ошибке открывает модуль во вкладке', (await page.innerText('.tab.active')).includes('мат.vlstd'));
+await page.click('.tab.active .close');
+
 // 8. сеть напрямую из браузера (сайт с CORS) → число
 await page.uncheck('#netserver');
 out = await run(`пусть о будет rete.получиJson("${NET_URL}")\nпусть n будет о.${NET_FIELD}\nскажи n + 0 больше -1\nскажи n`);

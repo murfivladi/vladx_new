@@ -26,8 +26,9 @@ fn module(globals: &Rc<Env>, name: &str, fns: Vec<(&str, usize, usize, NativeImp
     globals.define(name, Value::Module(Rc::new(Module { name: name.to_string(), fns: m })), false);
 }
 
-pub fn install(it: &mut Interp) {
-    let g = it.globals.clone();
+/// Стандартная библиотека в глобальное окружение (своё у каждого модуля).
+pub fn install(g: &Rc<Env>) {
+    let g = g.clone();
     module(&g, "numeri", vec![
         ("корень", 1, 1, n_sqrt),
         ("модуль", 1, 1, n_abs),

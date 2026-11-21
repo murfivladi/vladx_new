@@ -3,7 +3,7 @@
 use crate::value::{type_name, AssignErr, Closure, Env, ErrorVal, Value};
 use crate::{Host, Options, Perm};
 use indexmap::IndexMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 use vladx_ast::{BinOp, Block, Diagnostic, Expr, Param, Span, Stmt, StringPart, UnOp};
 
@@ -12,7 +12,7 @@ pub enum Ctl {
     Break,
     Continue,
     Return(Value),
-    Throw(Value, Span),
+    Throw(Value, Span, Option<Rc<str>>),
     Fail(Diagnostic),
 }
 
@@ -51,6 +51,15 @@ pub struct Interp<'h> {
     rng: u64,
     asked: HashSet<Perm>,
     closure_envs: Vec<Weak<Env>>,
+    // ── модули проекта ──
+    dict: Option<vladx_syntax::Dictionary>,
+    lang: vladx_syntax::Lang,
+    /// Загруженные модули: путь → их глобальное окружение (модуль выполняется один раз).
+    modules: HashMap<String, Rc<Env>>,
+    /// Цепочка загружаемых сейчас модулей (для сообщения о цикле).
+    loading: Vec<String>,
+    /// Файл исполняемого кода (None — главная программа).
+    cur_file: Option<Rc<str>>,
 }
 
 const MAX_WARNINGS: usize = 100;
@@ -59,7 +68,7 @@ impl<'h> Interp<'h> {
     pub fn new(host: &'h mut dyn Host, opts: Options, words: Words) -> Self {
         let seed = opts.seed.unwrap_or_else(|| host.now_ms().to_bits() ^ 0x9E37_79B9_7F4A_7C15) | 1;
         let globals = Env::new(None, None);
-        let mut me = Interp {
+        let me = Interp {
             host,
             opts,
             words,
@@ -73,23 +82,46 @@ impl<'h> Interp<'h> {
             rng: seed,
             asked: HashSet::new(),
             closure_envs: vec![],
+            dict: None,
+            lang: vladx_syntax::Lang::Ru,
+            modules: HashMap::new(),
+            loading: vec![],
+            cur_file: None,
         };
-        crate::stdlib::install(&mut me);
+        crate::stdlib::install(&me.globals);
         me
+    }
+
+    /// Словарь и язык проекта — нужны для разбора импортируемых модулей.
+    pub fn set_project(&mut self, dict: vladx_syntax::Dictionary, lang: vladx_syntax::Lang) {
+        self.dict = Some(dict);
+        self.lang = lang;
+    }
+
+    /// Папка исполняемого сейчас файла относительно корня проекта.
+    fn cur_dir(&self) -> String {
+        match &self.cur_file {
+            Some(f) => f.rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_default(),
+            None => self.opts.main_dir.clone(),
+        }
     }
 
     /// Исполнить тело программы.
     pub fn run(&mut self, body: &[Stmt]) -> Result<(), Diagnostic> {
         let g = self.globals.clone();
         let r = self.exec_stmts(body, &g);
+        // Файл "" означает «главная программа».
+        let main_file = |d: Diagnostic| Diagnostic { file: d.file.filter(|f| !f.is_empty()), ..d };
         match r {
             Ok(()) | Err(Ctl::Return(_)) | Err(Ctl::Break) | Err(Ctl::Continue) => Ok(()),
-            Err(Ctl::Fail(d)) => Err(d),
-            Err(Ctl::Throw(v, sp)) => {
+            Err(Ctl::Fail(d)) => Err(main_file(d)),
+            Err(Ctl::Throw(v, sp, file)) => {
                 let shown = self.display(&v);
-                Err(Diagnostic::error("E-UNCAUGHT", format!("необработанная ошибка: {shown}"), sp).with_hint(
+                let mut d = Diagnostic::error("E-UNCAUGHT", format!("необработанная ошибка: {shown}"), sp).with_hint(
                     "оберните код в попытку и поймайте ошибку, чтобы обработать её".to_string(),
-                ))
+                );
+                d.file = file.map(|f| f.to_string());
+                Err(main_file(d))
             }
         }
     }
@@ -276,10 +308,21 @@ impl<'h> Interp<'h> {
         if !self.closure_envs.last().is_some_and(|w| w.as_ptr() == Rc::as_ptr(env)) {
             self.closure_envs.push(Rc::downgrade(env));
         }
-        Value::Func(Rc::new(Closure { name, params: params.to_vec(), body: body.clone(), env: env.clone() }))
+        Value::Func(Rc::new(Closure { name, params: params.to_vec(), body: body.clone(), env: env.clone(), file: self.cur_file.clone() }))
     }
 
     fn exec(&mut self, s: &Stmt, env: &Rc<Env>) -> R<()> {
+        match self.exec_inner(s, env) {
+            // Ошибка помечается файлом того кода, где она случилась ("" — главная программа).
+            Err(Ctl::Fail(mut d)) if d.file.is_none() => {
+                d.file = Some(self.cur_file.as_deref().unwrap_or("").to_string());
+                Err(Ctl::Fail(d))
+            }
+            other => other,
+        }
+    }
+
+    fn exec_inner(&mut self, s: &Stmt, env: &Rc<Env>) -> R<()> {
         let sp = self.sp(s.span());
         self.tick(sp)?;
         match s {
@@ -401,7 +444,7 @@ impl<'h> Interp<'h> {
             }
             Stmt::Try { body, error_name, handler, .. } => {
                 let caught = match self.exec_block(body, env) {
-                    Err(Ctl::Throw(v, _)) => v,
+                    Err(Ctl::Throw(v, _, _)) => v,
                     Err(Ctl::Fail(d)) if !d.code.starts_with("E-LIMIT") && d.code != crate::ASK_WAIT => {
                         Value::Error(Rc::new(ErrorVal { code: d.code, message: d.message }))
                     }
@@ -413,7 +456,7 @@ impl<'h> Interp<'h> {
             }
             Stmt::Throw { value, .. } => {
                 let v = self.eval(value, env)?;
-                return Err(Ctl::Throw(v, sp));
+                return Err(Ctl::Throw(v, sp, self.cur_file.clone()));
             }
             Stmt::Import { module, path, .. } => {
                 if let Some(m) = module {
@@ -427,12 +470,8 @@ impl<'h> Interp<'h> {
                     }
                 }
                 if let Some(p) = path {
-                    return fail_hint(
-                        "E-MODULE-001",
-                        format!("Модуль «{p}» не найден: импорт файлов проекта пока не поддерживается"),
-                        "в v0.1 доступны только модули стандартной библиотеки",
-                        sp,
-                    );
+                    let Stmt::Import { names, .. } = s else { unreachable!() };
+                    self.import(p, names, env, sp)?;
                 }
             }
             Stmt::ExprStmt { expr, .. } => {
@@ -440,6 +479,105 @@ impl<'h> Interp<'h> {
             }
         }
         Ok(())
+    }
+
+    // ───────────── модули проекта ─────────────
+
+    /// `из "путь" возьми a, b`: найти, выполнить один раз, взять имена.
+    fn import(&mut self, spec: &str, names: &[String], env: &Rc<Env>, sp: Span) -> R<()> {
+        let (id, menv) = self.load_module(spec, sp)?;
+        for n in names {
+            if n.starts_with('_') {
+                return fail_hint(
+                    "E-MODULE-002",
+                    format!("«{n}» — внутреннее имя модуля «{id}»"),
+                    "имена, начинающиеся с «_», модуль не отдаёт",
+                    sp,
+                );
+            }
+            let v = menv.vars.borrow().get(n).map(|b| b.value.clone());
+            match v {
+                Some(v) => env.define(n, v, false),
+                None => {
+                    let mut have: Vec<String> =
+                        menv.vars.borrow().keys().filter(|k| !k.starts_with('_') && !crate::GLOBAL_NAMES.contains(&k.as_str())).cloned().collect();
+                    have.sort();
+                    return fail_hint(
+                        "E-MODULE-002",
+                        format!("В модуле «{id}» нет «{n}»"),
+                        if have.is_empty() { "модуль ничего не объявляет".to_string() } else { format!("есть: {}", have.join(", ")) },
+                        sp,
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn load_module(&mut self, spec: &str, sp: Span) -> R<(String, Rc<Env>)> {
+        if spec.ends_with(".vlhmn") {
+            return fail("E-MODULE-001", format!("Импорт «{spec}» не поддерживается: модулем может быть только .vlstd"), sp);
+        }
+        let base = normalize_path(&format!("{}/{}", self.cur_dir(), spec));
+        let mut candidates = vec![base.clone()];
+        if !base.ends_with(".vlstd") {
+            candidates.push(format!("{base}.vlstd"));
+        }
+        if let Some(id) = candidates.iter().find(|c| self.modules.contains_key(*c)) {
+            return Ok((id.clone(), self.modules[id].clone()));
+        }
+        let mut found = None;
+        let mut why = String::new();
+        for c in &candidates {
+            match self.host.read_code(c) {
+                Ok(src) => {
+                    found = Some((c.clone(), src));
+                    break;
+                }
+                Err(e) => why = e,
+            }
+        }
+        let Some((id, src)) = found else {
+            return fail_hint(
+                "E-MODULE-001",
+                format!("Модуль «{spec}» не найден (искал: {})", candidates.join(", ")),
+                format!("путь считается от папки этого файла; {why}"),
+                sp,
+            );
+        };
+        if let Some(pos) = self.loading.iter().position(|m| *m == id) {
+            let mut chain = self.loading[pos..].to_vec();
+            chain.push(id.clone());
+            return fail_hint(
+                "E-MODULE-003",
+                format!("Циклический импорт: {}", chain.join(" → ")),
+                "вынесите общее в третий модуль, который импортируют оба",
+                sp,
+            );
+        }
+        let Some(dict) = self.dict.clone() else {
+            return fail("E-MODULE-001", "импорт модулей недоступен: нет словаря проекта", sp);
+        };
+        let (prog, diags) = vladx_syntax::analyze(&src, self.lang, &dict, crate::GLOBAL_NAMES);
+        if let Some(mut d) = diags.into_iter().find(|d| d.is_error()) {
+            d.file = Some(id.clone());
+            return Err(Ctl::Fail(d));
+        }
+        let prog = prog.expect("без ошибок разбора AST есть");
+        let menv = Env::new(None, None);
+        crate::stdlib::install(&menv);
+        self.loading.push(id.clone());
+        let saved = self.cur_file.replace(Rc::from(id.as_str()));
+        let r = self.exec_stmts(&prog.body, &menv);
+        self.cur_file = saved;
+        self.loading.pop();
+        match r {
+            Ok(()) | Err(Ctl::Return(_)) | Err(Ctl::Break) | Err(Ctl::Continue) => {}
+            Err(e) => return Err(e),
+        }
+        self.closure_envs.push(Rc::downgrade(&menv));
+        self.modules.insert(id.clone(), menv.clone());
+        Ok((id, menv))
     }
 
     fn assign_var(&mut self, env: &Rc<Env>, name: &str, v: Value, sp: Span) -> R<()> {
@@ -586,7 +724,9 @@ impl<'h> Interp<'h> {
                     );
                 }
                 self.depth += 1;
+                let saved = std::mem::replace(&mut self.cur_file, c.file.clone());
                 let r = self.call_closure(&c, args, this, sp);
+                self.cur_file = saved;
                 self.depth -= 1;
                 match r {
                     Ok(()) | Err(Ctl::Break) | Err(Ctl::Continue) => Ok(Value::Null),
@@ -889,6 +1029,25 @@ impl<'h> Interp<'h> {
             ),
         }
     }
+}
+
+/// `a/./b/../c` → `a/c`; ведущие `..` сохраняются (выход выше корня решает хост).
+pub fn normalize_path(p: &str) -> String {
+    let mut out: Vec<&str> = vec![];
+    for seg in p.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                if out.last().is_some_and(|l| *l != "..") {
+                    out.pop();
+                } else {
+                    out.push("..");
+                }
+            }
+            s => out.push(s),
+        }
+    }
+    out.join("/")
 }
 
 pub fn deep_eq(a: &Value, b: &Value) -> bool {

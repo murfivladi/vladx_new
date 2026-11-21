@@ -48,6 +48,11 @@ pub trait Host {
     fn now_ms(&mut self) -> f64 {
         0.0
     }
+    /// Исходник модуля проекта для `из "путь" возьми …` (путь — от корня проекта).
+    /// Это код, а не данные программы: разрешение «файлы» не требуется, как у require в Node.
+    fn read_code(&mut self, path: &str) -> Result<String, String> {
+        self.read(path)
+    }
     /// Мягкая остановка (лимит времени). `Some(сообщение)` — остановить.
     fn should_stop(&mut self) -> Option<String> {
         None
@@ -69,6 +74,9 @@ pub struct Options {
     /// программу кодом [`ASK_WAIT`]; страница спрашивает человека и запускает
     /// программу заново со всеми ответами (исполнение детерминировано).
     pub interactive: bool,
+    /// Папка главной программы относительно корня проекта ("" — корень):
+    /// от неё считаются пути `из "…" возьми`.
+    pub main_dir: String,
 }
 
 /// Код остановки «программа ждёт ответ на спроси» (не ошибка, не ловится «попробуй»).
@@ -76,7 +84,7 @@ pub const ASK_WAIT: &str = "E-ASK-WAIT";
 
 impl Default for Options {
     fn default() -> Self {
-        Options { max_steps: 10_000_000, max_depth: 1000, files: true, net: true, seed: None, interactive: false }
+        Options { max_steps: 10_000_000, max_depth: 1000, files: true, net: true, seed: None, interactive: false, main_dir: String::new() }
     }
 }
 
@@ -120,6 +128,7 @@ pub fn run_source(src: &str, lang: Lang, dict: &Dictionary, host: &mut dyn Host,
 pub fn run_program(p: &Program, dict: &Dictionary, host: &mut dyn Host, opts: Options) -> RunResult {
     let lang = Lang::from_code(&p.lang).unwrap_or(dict.default_lang);
     let mut it = Interp::new(host, opts, words_for(dict, lang));
+    it.set_project(dict.clone(), lang);
     let r = it.run(&p.body);
     it.cleanup();
     let stdout = std::mem::take(&mut it.stdout);

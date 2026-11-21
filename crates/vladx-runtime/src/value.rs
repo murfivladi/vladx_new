@@ -33,6 +33,8 @@ pub struct Closure {
     pub params: Vec<Param>,
     pub body: Rc<Block>,
     pub env: Rc<Env>,
+    /// Модуль, где функция объявлена (None — главная программа).
+    pub file: Option<Rc<str>>,
 }
 
 pub type NativeImpl = fn(&mut Interp, &[Value], Span) -> R<Value>;

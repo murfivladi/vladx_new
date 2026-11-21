@@ -64,6 +64,8 @@ struct State {
     /// (повторный запуск с ответами); 2 — ждать ответа через импорт vx_host_input
     /// (страница с SharedArrayBuffer: программа реально стоит, как в Node).
     ask_mode: u32,
+    /// Папка главной программы в хранилище: от неё считаются пути импорта.
+    main_dir: String,
     /// Кэш переводов .vlhmn на время жизни страницы.
     hmn_cache: std::collections::HashMap<String, String>,
 }
@@ -77,6 +79,7 @@ thread_local! {
         perms: 3,
         llm_model: String::new(),
         ask_mode: 0,
+        main_dir: String::new(),
         hmn_cache: std::collections::HashMap::new(),
     });
 }
@@ -250,6 +253,9 @@ fn diag_json(d: &vladx_ast::Diagnostic) -> serde_json::Value {
     if let Some(h) = &d.hint {
         v["hint"] = h.clone().into();
     }
+    if let Some(f) = &d.file {
+        v["file"] = f.clone().into();
+    }
     v
 }
 
@@ -295,6 +301,7 @@ fn run_setup(max_steps: u32) -> (Dictionary, Options) {
             files: st.perms & 1 != 0,
             net: st.perms & 2 != 0,
             interactive: st.ask_mode == 1,
+            main_dir: st.main_dir.clone(),
             seed: Some(st.time_ms.to_bits() | 1),
             ..Options::default()
         };
@@ -475,4 +482,14 @@ pub unsafe extern "C" fn vx_check(ptr: *const u8, len: usize, lang: u32) -> u32 
         .collect();
     set_result(serde_json::json!({ "diagnostics": list }).to_string());
     diags.iter().all(|d| !d.is_error()) as u32
+}
+
+/// Папка главной программы в хранилище ("" — корень): от неё считаются `из "путь" возьми`.
+///
+/// # Safety
+/// `ptr..ptr+len` — валидный буфер UTF-8.
+#[no_mangle]
+pub unsafe extern "C" fn vx_set_main_dir(ptr: *const u8, len: usize) {
+    let d = read_str(ptr, len);
+    ST.with(|st| st.borrow_mut().main_dir = d);
 }

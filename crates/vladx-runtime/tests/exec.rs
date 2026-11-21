@@ -379,3 +379,83 @@ fn negative_cases_give_expected_codes() {
         assert_eq!(code(&src), c, "{f}");
     }
 }
+
+// ───────────── модули проекта: из "путь" возьми … ─────────────
+
+fn project(files: &[(&str, &str)]) -> MemHost {
+    let mut h = MemHost::default();
+    for (p, src) in files {
+        h.files.insert(p.to_string(), src.to_string());
+    }
+    h
+}
+
+#[test]
+fn import_names_from_project_files() {
+    let h = project(&[
+        ("утилиты.vlstd", "функция удвой(x) {\n  верни x * 2\n}\nпусть версия будет \"1.0\""),
+        ("главная.vlstd", ""),
+    ]);
+    let src = "из \"утилиты\" возьми удвой, версия\nскажи удвой(21)\nскажи версия";
+    let (r, _) = run_full(src, Lang::Ru, h, Options::default());
+    assert!(r.ok, "{:?}", r.diagnostics);
+    assert_eq!(r.stdout, ["42", "1.0"]);
+}
+
+#[test]
+fn import_paths_are_relative_to_the_importing_file() {
+    // lib/строки.vlstd импортирует ../общее.vlstd; модуль выполняется один раз
+    let h = project(&[
+        ("общее.vlstd", "скажи \"загружено общее\"\nпусть разделитель будет \" | \""),
+        ("lib/строки.vlstd", "из \"../общее.vlstd\" возьми разделитель\nфункция склей(а, б) {\n  верни а + разделитель + б\n}"),
+    ]);
+    let src = "из \"lib/строки\" возьми склей\nиз \"общее\" возьми разделитель\nскажи склей(\"а\", \"б\")";
+    let (r, _) = run_full(src, Lang::Ru, h, Options::default());
+    assert!(r.ok, "{:?}", r.diagnostics);
+    assert_eq!(r.stdout, ["загружено общее", "а | б"]);
+}
+
+#[test]
+fn import_errors_are_clear() {
+    let h = || project(&[
+        ("а.vlstd", "из \"б\" возьми y\nпусть x будет 1"),
+        ("б.vlstd", "из \"а\" возьми x\nпусть y будет 2"),
+        ("м.vlstd", "пусть открыто будет 1\nпусть _скрыто будет 2"),
+        ("плохой.vlstd", "пусть z будет\n"),
+    ]);
+    let code = |src: &str| run_full(src, Lang::Ru, h(), Options::default()).0.diagnostics[0].clone();
+    let d = code("из \"нет\" возьми x");
+    assert_eq!(d.code, "E-MODULE-001");
+    let d = code("из \"а\" возьми x");
+    assert_eq!(d.code, "E-MODULE-003");
+    assert!(d.message.contains("а.vlstd → б.vlstd → а.vlstd"), "{}", d.message);
+    let d = code("из \"м\" возьми нигде");
+    assert_eq!((d.code.as_str(), d.hint.as_deref()), ("E-MODULE-002", Some("есть: открыто")));
+    assert_eq!(code("из \"м\" возьми _скрыто").code, "E-MODULE-002");
+    // синтаксическая ошибка в модуле указывает на его файл
+    let d = code("из \"плохой\" возьми z");
+    assert_eq!(d.file.as_deref(), Some("плохой.vlstd"));
+}
+
+#[test]
+fn runtime_error_inside_module_points_to_module_file() {
+    let h = project(&[("мат.vlstd", "функция дели(а, б) {\n  верни а / б\n}")]);
+    let (r, _) = run_full("из \"мат\" возьми дели\nскажи дели(1, 0)", Lang::Ru, h, Options::default());
+    let d = &r.diagnostics[0];
+    assert_eq!((d.code.as_str(), d.file.as_deref(), d.line), ("E-MATH-001", Some("мат.vlstd"), 2));
+    // а ошибка в главной программе — без файла
+    let (r, _) = run_full("скажи 1 / 0", Lang::Ru, MemHost::default(), Options::default());
+    assert_eq!(r.diagnostics[0].file, None);
+}
+
+#[test]
+fn modules_have_their_own_globals_and_need_no_file_permission() {
+    let h = project(&[("счёт.vlstd", "изменяй n станет 0\nфункция следующий() {\n  n станет n + 1\n  верни n\n}")]);
+    // n в главной программе — другое имя; разрешение «файлы» для кода не нужно (как require в Node)
+    let src = "из \"счёт\" возьми следующий\nизменяй n станет 100\nследующий()\nскажи следующий()\nскажи n";
+    let opts = Options { files: false, ..Options::default() };
+    let (r, h) = run_full(src, Lang::Ru, h, opts);
+    assert!(r.ok, "{:?}", r.diagnostics);
+    assert_eq!(r.stdout, ["2", "100"]);
+    assert!(h.asks.is_empty());
+}

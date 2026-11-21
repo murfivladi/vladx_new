@@ -3,6 +3,7 @@
 mod hmncmd;
 mod host;
 mod llm;
+mod project;
 mod serve;
 
 use std::path::{Path, PathBuf};
@@ -14,7 +15,9 @@ use vladx_syntax::{Dictionary, Lang};
 const USAGE: &str = "vladx — интерпретатор VladX (v0.1)
 
 Использование:
-  vladx run <файл> [--lang ru|it|scn] [--no-net] [--no-files] [--restrict-files]   выполнить программу
+  vladx run [файл] [--lang ru|it|scn] [--no-net] [--no-files] [--restrict-files]   выполнить программу
+                                                              (без файла — main из vladx.toml)
+  vladx init [папка] [--lang ru|it|scn]                       новый проект: vladx.toml, точка входа, модуль
   vladx parse <файл> [--lang ru|it|scn] [--keywords <путь>]   печать AST в JSON
   vladx check <файл> [--lang ru|it|scn]                       только диагностика
   vladx fmt <файл> [--lang …] [--to ru|it|scn] [--write]       канонический вид / перевод на другой язык
@@ -132,6 +135,7 @@ fn main() -> ExitCode {
         }
     };
     let res = match a.cmd.as_str() {
+        "init" => init_cmd(&a),
         "run" | "parse" | "check" | "fmt" | "hmn-eval" => {
             // Интерпретатор рекурсивный: исполняем в потоке с большим стеком.
             let h = std::thread::Builder::new().stack_size(512 * 1024 * 1024).spawn(move || program_cmd(a));
@@ -169,9 +173,21 @@ fn main() -> ExitCode {
 }
 
 fn program_cmd(a: Args) -> Result<bool, String> {
-    let file = a.file.clone().ok_or_else(|| format!("нужен файл или папка\n\n{USAGE}"))?;
+    let file = match a.file.clone() {
+        Some(f) => f,
+        // Без файла — точка входа проекта (как `node .` с main в package.json).
+        None => match project::find(Path::new(".")) {
+            Some(Ok(p)) => match &p.main {
+                Some(m) => p.root.join(m).display().to_string(),
+                None => return Err(format!("в {} нет main — укажите файл программы", project::FILE)),
+            },
+            Some(Err(e)) => return Err(e),
+            None => return Err(format!("нужен файл или папка (или {} с main)\n\n{USAGE}", project::FILE)),
+        },
+    };
     let dict = load_dict(&a)?;
-    let lang = a.lang.unwrap_or(dict.default_lang);
+    let proj = if a.cmd == "hmn-eval" { None } else { project::find(Path::new(&file).parent().unwrap_or(Path::new("."))).transpose()? };
+    let lang = a.lang.or(proj.as_ref().and_then(|p| p.lang)).unwrap_or(dict.default_lang);
     if a.cmd == "hmn-eval" {
         return hmncmd::eval_cmd(&a, &file, &dict, lang);
     }
@@ -223,9 +239,9 @@ fn program_cmd(a: Args) -> Result<bool, String> {
             Ok(errors == 0)
         }
         _ => {
-            let r = run_program_file(&a, &file, Run::Source(&src), &dict, lang);
+            let (r, root) = run_program_file(&a, &file, Run::Source(&src), &dict, lang);
             for d in &r.diagnostics {
-                eprint!("{}", d.render(&file, &src));
+                eprint!("{}", render_diag(d, &file, &src, &root));
             }
             Ok(r.ok)
         }
@@ -238,21 +254,48 @@ pub enum Run<'a> {
     Ast(&'a vladx_ast::Program),
 }
 
-/// Исполнить программу с хостом CLI (папка программы, флаги доступа, лимиты).
-pub fn run_program_file(a: &Args, file: &str, what: Run, dict: &Dictionary, lang: Lang) -> vladx_runtime::RunResult {
-    let base = Path::new(file).parent().map(|p| p.to_path_buf()).unwrap_or_default();
-    let base = if base.as_os_str().is_empty() { PathBuf::from(".") } else { base };
-    let base = std::fs::canonicalize(&base).unwrap_or(base);
+/// Исполнить программу с хостом CLI. Корень — папка с vladx.toml (иначе папка программы):
+/// от него считаются пути file.*, модули — от папки импортирующего файла.
+/// Возвращает и корень — по нему ищутся файлы модулей для сообщений об ошибках.
+pub fn run_program_file(a: &Args, file: &str, what: Run, dict: &Dictionary, lang: Lang) -> (vladx_runtime::RunResult, PathBuf) {
+    let dir = Path::new(file).parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    let dir = if dir.as_os_str().is_empty() { PathBuf::from(".") } else { dir };
+    let dir = std::fs::canonicalize(&dir).unwrap_or(dir);
+    let proj = project::find(&dir).and_then(|r| r.ok());
+    let base = proj.as_ref().map(|p| p.root.clone()).unwrap_or_else(|| dir.clone());
+    let main_dir = dir
+        .strip_prefix(&base)
+        .map(|r| r.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect::<Vec<_>>().join("/"))
+        .unwrap_or_default();
     let mut host = host::CliHost {
-        base,
-        restrict: a.restrict,
+        base: base.clone(),
+        restrict: a.restrict || proj.as_ref().and_then(|p| p.restrict_files).unwrap_or(false),
         deadline: if a.max_seconds > 0 { Some((Instant::now(), a.max_seconds)) } else { None },
         stream: true,
     };
-    let opts = Options { max_steps: a.max_steps, files: !a.no_files, net: !a.no_net, ..Options::default() };
-    match what {
+    let opts = Options {
+        max_steps: a.max_steps,
+        files: !a.no_files && proj.as_ref().and_then(|p| p.files).unwrap_or(true),
+        net: !a.no_net && proj.as_ref().and_then(|p| p.net).unwrap_or(true),
+        main_dir,
+        ..Options::default()
+    };
+    let r = match what {
         Run::Source(src) => vladx_runtime::run_source(src, lang, dict, &mut host, opts),
         Run::Ast(p) => vladx_runtime::run_program(p, dict, &mut host, opts),
+    };
+    (r, base)
+}
+
+/// Диагностика с исходником: ошибка в модуле показывается строкой из файла модуля.
+pub fn render_diag(d: &vladx_ast::Diagnostic, file: &str, src: &str, root: &Path) -> String {
+    match &d.file {
+        Some(m) => {
+            let path = root.join(m);
+            let text = std::fs::read_to_string(&path).unwrap_or_default();
+            d.render(&path.display().to_string(), &text)
+        }
+        None => d.render(file, src),
     }
 }
 
@@ -262,6 +305,17 @@ fn translated_name(file: &str, to: Lang) -> String {
         Some((stem, ext)) => format!("{stem}.{}.{ext}", to.code()),
         None => format!("{file}.{}", to.code()),
     }
+}
+
+fn init_cmd(a: &Args) -> Result<bool, String> {
+    let dict = load_dict(a)?;
+    let dir = PathBuf::from(a.file.clone().unwrap_or_else(|| ".".into()));
+    let made = project::init(&dir, a.lang.unwrap_or(dict.default_lang), &dict)?;
+    for m in &made {
+        println!("создан {}", m.display());
+    }
+    println!("запуск: cd {} && vladx run", dir.display());
+    Ok(true)
 }
 
 fn keywords_cmd(a: &Args) -> Result<bool, String> {

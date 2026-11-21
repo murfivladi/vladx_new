@@ -65,6 +65,19 @@ if command -v php >/dev/null; then
   ok "deploy/shared/*.php: синтаксис PHP ($(ls deploy/shared/*.php | wc -l) файлов)"
 fi
 
+echo "== проекты и модули"
+for l in ru it scn; do
+  rm -rf "$TMP/proj-$l"
+  "$VX" init "$TMP/proj-$l" --lang "$l" >/dev/null
+  out="$(cd "$TMP/proj-$l" && echo "Аня" | "$VX" run 2>&1)"
+  has "$out" "Аня!" && ok "vladx init --lang $l → vladx run без файла, импорт модуля" || bad "проект $l: $out"
+done
+mkdir -p "$TMP/proj-ru/lib"
+printf 'из "../утилиты" возьми приветствие\nфункция сломай() {\n  верни 1 / 0\n}\n' > "$TMP/proj-ru/lib/м.vlstd"
+printf 'из "lib/м" возьми сломай\nсломай()\n' > "$TMP/proj-ru/т.vlstd"
+out="$("$VX" run "$TMP/proj-ru/т.vlstd" 2>&1)"
+has "$out" "lib/м.vlstd:3:11  E-MATH-001" && ok "ошибка в модуле — с файлом и строкой модуля" || bad "ошибка модуля: $out"
+
 echo "== негативные случаи"
 for pair in "01-order:E-ORDER-001" "02-unclosed-block:E-SYNTAX-003" "03-mutate-const:E-NAME-002" "04-unknown-word:E-SYNTAX-016"; do
   f="tests/negative/${pair%%:*}.vlstd"; want="${pair##*:}"

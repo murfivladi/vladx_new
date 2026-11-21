@@ -106,9 +106,9 @@ pub fn hmn_cmd(a: &Args, file: &str, src: &str, dict: &Dictionary, lang: Lang) -
                 eprint!("{}", d.render(file, src));
                 return Ok(false);
             }
-            let r = run_program_file(a, file, Run::Ast(&t.checked.program), dict, lang);
+            let (r, root) = run_program_file(a, file, Run::Ast(&t.checked.program), dict, lang);
             for d in &r.diagnostics {
-                eprint!("{}", d.render(&label, &t.checked.text));
+                eprint!("{}", crate::render_diag(d, &label, &t.checked.text, &root));
             }
             Ok(r.ok)
         }

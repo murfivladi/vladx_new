@@ -19,6 +19,9 @@ pub struct Diagnostic {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
     pub severity: Severity,
+    /// Файл, к которому относится позиция (модуль проекта); нет — главная программа.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
 }
 
 impl Diagnostic {
@@ -31,6 +34,7 @@ impl Diagnostic {
             len: span.len.max(1),
             hint: None,
             severity: Severity::Error,
+            file: None,
         }
     }
 
