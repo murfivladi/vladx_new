@@ -39,7 +39,7 @@ dì "ciao, {nome}"
 | macOS Intel | `vladx-x86_64-apple-darwin.tar.gz` |
 | Windows x86_64 | `vladx-x86_64-pc-windows-msvc.zip` |
 | Площадка и ядро WASM | `vladx-playground.html`, `vladx.wasm` |
-| Для shared-хостинга (площадка + PHP-посредник ИИ) | `vladx-shared.zip` |
+| Для shared-хостинга (площадка «как Node» + PHP: файлы, сеть, ИИ) | `vladx-shared.zip` |
 
 Распакуйте архив и запустите `vladx run examples/ru/01-hello.vlstd`. На macOS при первом запуске может понадобиться `xattr -d com.apple.quarantine vladx`. Тег `v*` (например, `v0.1.0`) создаёт постоянный релиз с тем же набором файлов. Сборкой управляет `.github/workflows/release.yml`.
 
@@ -77,7 +77,11 @@ vladx serve [--port 8000]                                    площадка, �
 vladx hmn-eval <папка>                                       оценка перевода .vlhmn на наборе фраз
 ```
 
-Для `.vlhmn` нужен ИИ. Ключ Polza.ai и модель лежат на сервере: на shared-хостинге это один PHP-файл (`deploy/shared/`, готовый архив `vladx-shared.zip` есть в релизе), локально — `vladx serve` с `POLZA_API_KEY`. Площадка на хостинге сама находит `vladx-llm.php` рядом с собой. CLI ходит через тот же сервер:
+### Площадка на shared-хостинге — как Node.js
+
+Положите `vladx-shared.zip` из релиза на хостинг с PHP — и площадка работает максимально похоже на Node: вывод по ходу, `спроси` ждёт ответа в терминале, файлы пишутся на сервер сразу, `rete` читает любые сайты без CORS, время идёт. Там же лежит посредник ИИ для `.vlhmn`: ключ Polza.ai и модель хранятся только на сервере. Установка — `deploy/shared/README.md`. Локально то же делает `vladx serve` (файлы — прямо на диск, в `vladx-files/`).
+
+CLI ходит к ИИ через тот же сервер:
 
 ```bash
 export VLADX_LLM_PROXY=https://ваш-сайт/vladx/vladx-llm.php
@@ -87,7 +91,7 @@ export VLADX_LLM_PROXY=https://ваш-сайт/vladx/vladx-llm.php
 vladx run examples/ru/14-shopping.vlhmn
 ```
 
-Перед запуском `vladx` показывает, как ИИ понял текст, и не запускает программу, если уверенность ниже 0.8. Переводы кэшируются: повторный запуск запросов не тратит. Установка на хостинг — `deploy/shared/README.md`.
+Перед запуском `vladx` показывает, как ИИ понял текст, и не запускает программу, если уверенность ниже 0.8. Переводы кэшируются: повторный запуск запросов не тратит.
 
 ## Проверки
 
@@ -123,7 +127,7 @@ spec/
 site/             площадка: один HTML со встроенным WASM
 examples/         примеры на ru, it, scn (проверяются тестами)
 tests/            негативные случаи и браузерный сценарий
-deploy/shared/    PHP-посредник ИИ для shared-хостинга (ключ и модель — на сервере)
+deploy/shared/    PHP для shared-хостинга: файлы, сеть и ИИ площадки (ключ и модель — на сервере)
 docs/HANDOVER.md  исходное техническое задание
 ```
 

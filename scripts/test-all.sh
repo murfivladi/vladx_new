@@ -61,7 +61,8 @@ else
 fi
 
 if command -v php >/dev/null; then
-  php -l deploy/shared/vladx-llm.php >/dev/null && ok "deploy/shared/vladx-llm.php: синтаксис PHP" || bad "vladx-llm.php: синтаксис PHP"
+  for f in deploy/shared/*.php; do php -l "$f" >/dev/null || bad "$f: синтаксис PHP"; done
+  ok "deploy/shared/*.php: синтаксис PHP ($(ls deploy/shared/*.php | wc -l) файлов)"
 fi
 
 echo "== негативные случаи"

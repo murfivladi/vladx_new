@@ -18,4 +18,15 @@ return [
     // Лимиты, чтобы чужие не потратили баланс.
     'per_ip_per_hour'  => 60,
     'per_day'          => 1000,
+
+    // Файлы программ на сервере (vladx-fs.php): у каждого браузера своя папка.
+    'fs_enabled'        => true,
+    'fs_quota_bytes'    => 10 * 1024 * 1024,  // на одну рабочую папку
+    'fs_max_files'      => 500,
+    'fs_max_workspaces' => 1000,
+
+    // Сеть программ через сервер (vladx-fetch.php): как в Node, без CORS.
+    'fetch_enabled'         => true,
+    'fetch_max_bytes'       => 5 * 1024 * 1024,
+    'fetch_per_ip_per_hour' => 600,
 ];

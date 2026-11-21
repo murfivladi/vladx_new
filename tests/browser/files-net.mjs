@@ -1,12 +1,14 @@
-// Браузерный сценарий (§12.3): настоящий Chromium, настоящие OPFS и HTTP.
-//   bash scripts/serve.sh &            (или сценарий сам поднимет vladx serve)
-//   node tests/browser/files-net.mjs
+// Браузерный сценарий: настоящий Chromium и vladx serve (страница изолирована — режим «как Node»):
+// вывод по ходу, «спроси» ждёт ответа, файлы пишутся на диск сразу, сеть через сервер.
+//   node tests/browser/files-net.mjs     (сценарий сам поднимает vladx serve с временной папкой файлов)
 // Переменные: VLADX_URL (страница), VLADX_NET_URL + VLADX_NET_FIELD (JSON с CORS
 // и числовым полем; по умолчанию api.github.com …/rust-lang/rust, stargazers_count),
 // HTTPS_PROXY (прокси окружения для Chromium), VLADX_BROWSER_CA_SPKI (доверять CA прокси).
 import { createRequire } from 'node:module';
 import { spawn, execSync } from 'node:child_process';
 import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
@@ -14,18 +16,17 @@ let chromium;
 try { ({ chromium } = require('playwright')); } catch { ({ chromium } = require('playwright-core')); }
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const PAGE = process.env.VLADX_URL || 'http://localhost:8000/site/playground.html';
+const PORT = 18800 + Math.floor(Math.random() * 500);
+const PAGE = `http://localhost:${PORT}/site/playground.html`;
+const FILES = fs.mkdtempSync(path.join(os.tmpdir(), 'vladx-files-'));
 const NET_URL = process.env.VLADX_NET_URL || 'https://api.github.com/repos/rust-lang/rust';
 const NET_FIELD = process.env.VLADX_NET_FIELD || 'stargazers_count';
 
-let server = null;
 async function up() { try { return (await fetch(PAGE)).ok; } catch { return false; } }
-if (!(await up())) {
-  const target = JSON.parse(execSync('cargo metadata --format-version 1 --no-deps', { cwd: ROOT })).target_directory;
-  execSync('cargo build -q -p vladx-cli', { cwd: ROOT, stdio: 'inherit' });
-  server = spawn(path.join(target, 'debug', 'vladx'), ['serve', '--port', '8000'], { cwd: ROOT, stdio: 'ignore' });
-  for (let i = 0; i < 50 && !(await up()); i++) await new Promise(r => setTimeout(r, 100));
-}
+const target = JSON.parse(execSync('cargo metadata --format-version 1 --no-deps', { cwd: ROOT })).target_directory;
+execSync('cargo build -q -p vladx-cli', { cwd: ROOT, stdio: 'inherit' });
+const server = spawn(path.join(target, 'debug', 'vladx'), ['serve', '--port', String(PORT), '--files', FILES], { cwd: ROOT, stdio: 'ignore' });
+for (let i = 0; i < 80 && !(await up()); i++) await new Promise(r => setTimeout(r, 100));
 
 const args = [];
 if (process.env.VLADX_BROWSER_CA_SPKI) args.push('--ignore-certificate-errors-spki-list=' + process.env.VLADX_BROWSER_CA_SPKI);
@@ -65,6 +66,9 @@ async function filesPanel() { return page.$$eval('#files li:not(.empty) span:not
 await page.goto(PAGE);
 await ready();
 
+check(0, 'страница изолирована — режим «как Node», файлы на диске', (await page.innerText('#st-mode')).includes('как Node') && (await page.innerText('#store-kind')).includes('диск'),
+  await page.innerText('#st-mode') + ' / ' + await page.innerText('#store-kind'));
+
 // 1. файлы без разрешения → E-FILE-001 и просьба человеку; после согласия программа идёт
 await page.click('#act-settings');
 await page.uncheck('#pfiles');
@@ -84,6 +88,7 @@ out = await run(`file.запиши("заметка.txt", "первая стро�
 file.запиши("папка/вложенный.txt", "вложенные папки тоже работают")
 скажи file.список()`);
 check(2, 'запись + чтение + список', out.includes('текст: первая строка') && out.includes('папка/вложенный.txt'), out);
+check('2b', 'файлы — настоящие файлы на диске сервера', fs.readFileSync(path.join(FILES, 'папка/вложенный.txt'), 'utf8') === 'вложенные папки тоже работают');
 
 // 3. панель файлов показывает 2 файла
 await page.waitForFunction(() => document.querySelectorAll('#files li:not(.empty)').length === 2, null, { timeout: 10000 }).catch(() => {});
@@ -105,28 +110,33 @@ out = await run('скажи file.список()');
 panel = await filesPanel();
 check(6, 'после перезагрузки удалённый не вернулся', !out.includes('заметка.txt') && out.includes('папка/вложенный.txt') && !panel.includes('заметка.txt'), out);
 
-// 7. спроси: вопрос в терминале, ответ вводится прямо там (Enter), программа продолжается
+// 7. как Node: вывод виден сразу, «спроси» ждёт ответа, файл записан до конца программы
 await idle();
-await page.fill('#code', 'скажи "начало"\nспроси "как тебя зовут?" и сохрани в имя\nспроси "город?" и сохрани в город\nскажи "здравствуй, {имя} из {город}"');
+await page.fill('#code', 'скажи "начало"\nfile.запиши("сразу.txt", "записано до вопроса")\nспроси "как тебя зовут?" и сохрани в имя\nспроси "город?" и сохрани в город\nскажи "здравствуй, {имя} из {город}"');
 await page.click('#run');
 await page.waitForFunction(() => /ждёт ввода/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
 const prompt1 = await page.innerText('#term-prompt');
+const early = await page.innerText('#output');
+const fileEarly = fs.existsSync(path.join(FILES, 'сразу.txt'));
+check('7a', 'вывод по ходу: «начало» видно, пока программа ждёт ответа', early.includes('начало') && prompt1 === 'как тебя зовут?', early);
+check('7b', 'файл записан сразу, до завершения программы', fileEarly);
 await page.fill('#term-input', 'Мария'); await page.press('#term-input', 'Enter');
-await page.waitForFunction(() => /ждёт ввода/.test(document.getElementById('status').textContent) && /город/.test(document.getElementById('term-prompt').textContent), null, { timeout: 30000 });
+await page.waitForFunction(() => /город/.test(document.getElementById('term-prompt').textContent) && !document.getElementById('term-ask').hidden, null, { timeout: 30000 });
 await page.fill('#term-input', 'Палермо'); await page.press('#term-input', 'Enter');
 await page.waitForTimeout(50); await idle();
 out = await page.innerText('#output');
-check(7, 'спроси: ответ в терминале, два вопроса подряд', prompt1 === 'как тебя зовут?' && out.includes('как тебя зовут? Мария') && out.includes('здравствуй, Мария из Палермо') && out.split('начало').length === 2, out);
+check(7, 'спроси: два вопроса подряд, программа не перезапускалась', out.includes('как тебя зовут? Мария') && out.includes('здравствуй, Мария из Палермо') && out.split('начало').length === 2, out);
 
-// 8. сеть напрямую (сайт с CORS) → число
+// 8. сеть напрямую из браузера (сайт с CORS) → число
+await page.uncheck('#netserver');
 out = await run(`пусть о будет rete.получиJson("${NET_URL}")\nпусть n будет о.${NET_FIELD}\nскажи n + 0 больше -1\nскажи n`);
 check(8, `rete.получиJson напрямую (${new URL(NET_URL).host}) → число`, out.startsWith('истина'), out);
 
-// 9. тот же запрос через прокси vladx serve → строка
-await page.check('#viaproxy');
+// 9. тот же запрос через сервер (как в Node, без CORS) → строка
+await page.check('#netserver');
 out = await run(`пусть т будет rete.получи("${NET_URL}")\nскажи testo.длина(т) больше 0\nскажи testo.кусок(т, 0, 1)`);
-check(9, 'тот же запрос через прокси http://localhost:8000 → строка', out.startsWith('истина') && out.includes('{'), out);
-await page.uncheck('#viaproxy');
+check(9, 'тот же запрос через сервер vladx-fetch.php → строка', out.startsWith('истина') && out.includes('{'), out);
+
 
 // 10. перевод кода на другой язык прямо в браузере (ядро, без сервера)
 await page.fill('#code', 'пусть x будет 2\nскажи x * 3');
@@ -146,6 +156,7 @@ await page.selectOption('#fmt', 'vlstd');
 check(12, 'в консоли страницы нет ошибок', consoleErrors.length === 0, consoleErrors.join('\n'));
 
 await browser.close();
-if (server) server.kill();
+server.kill();
+fs.rmSync(FILES, { recursive: true, force: true });
 console.log(`\n${passed} прошло, ${failed} упало`);
 process.exit(failed ? 1 : 0);

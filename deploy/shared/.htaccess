@@ -1,7 +1,14 @@
-# Не отдавать настройки и счётчики лимитов.
-<FilesMatch "^(config\.php|config\.example\.php)$">
+# Площадка — через index.php (он отдаёт заголовки изоляции страницы).
+DirectoryIndex index.php index.html
+# Не отдавать настройки, общий модуль и данные.
+<FilesMatch "^(config\.php|config\.example\.php|vladx-common\.php)$">
   Require all denied
 </FilesMatch>
 RedirectMatch 403 /vladx-data/
-DirectoryIndex index.html
+<IfModule mod_headers.c>
+  <FilesMatch "\.html$">
+    Header set Cross-Origin-Opener-Policy "same-origin"
+    Header set Cross-Origin-Embedder-Policy "require-corp"
+  </FilesMatch>
+</IfModule>
 AddType application/wasm .wasm

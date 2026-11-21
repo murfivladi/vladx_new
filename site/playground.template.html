@@ -202,7 +202,7 @@ kbd { font: 10px var(--mono); opacity: .7; margin-left: 5px; }
     <section id="view-explorer">
       <h3>Примеры</h3>
       <div id="examples" class="tree"></div>
-      <h3>Хранилище <span class="actions"><button id="newfile" title="Новый файл">+</button><button id="refresh" title="Обновить">↻</button></span></h3>
+      <h3>Хранилище <span id="store-kind" style="text-transform:none;letter-spacing:0"></span><span class="actions"><button id="newfile" title="Новый файл">+</button><button id="refresh" title="Обновить">↻</button></span></h3>
       <ul id="files" class="tree"><li class="empty">пусто</li></ul>
     </section>
     <section id="view-settings" hidden>
@@ -214,9 +214,18 @@ kbd { font: 10px var(--mono); opacity: .7; margin-left: 5px; }
       </div>
       <h3>Сеть</h3>
       <div class="settings">
-        <div class="field"><span>Прокси для сайтов без CORS (vladx serve)</span><input type="text" id="proxy" value="http://localhost:8000"></div>
-        <label><input type="checkbox" id="viaproxy"> все запросы через прокси</label>
+        <label><input type="checkbox" id="netserver" checked> через сервер — без CORS, как в Node</label>
+        <div class="note" id="netinfo">ищу vladx-fetch.php…</div>
       </div>
+      <h3>Файлы программ</h3>
+      <div class="settings">
+        <div class="note" id="fsinfo">ищу vladx-fs.php…</div>
+        <div class="field" id="wsbox" hidden><span>Ключ рабочей папки (откройте те же файлы на другом устройстве)</span>
+          <div class="row"><input type="text" id="wskey" spellcheck="false" style="flex:1;font-family:var(--mono);font-size:11px"><button id="wscopy" title="Скопировать">⧉</button></div>
+        </div>
+      </div>
+      <h3>Режим</h3>
+      <div class="settings"><div class="note" id="modeinfo"></div></div>
       <h3>ИИ для .vlhmn</h3>
       <div class="settings">
         <div class="field"><span>Сервер с ключом (vladx-llm.php или vladx serve)</span><input type="text" id="llmurl" placeholder="автоматически"></div>
@@ -267,6 +276,7 @@ kbd { font: 10px var(--mono); opacity: .7; margin-left: 5px; }
   <span id="st-cursor">Стр 1, Кол 1</span>
   <span id="st-lang" class="hide-narrow">ru</span>
   <span id="st-fmt">.vlstd</span>
+  <span id="st-mode" class="hide-narrow"></span>
   <span id="st-ai" class="hide-narrow"></span>
   <span class="hide-narrow">UTF-8</span>
 </footer>
@@ -276,6 +286,7 @@ kbd { font: 10px var(--mono); opacity: .7; margin-left: 5px; }
 // Worker: единственное место, где браузер разрешает ждать синхронно
 // (синхронный OPFS и синхронный XHR). Ядро — WASM, здесь только хост.
 let ex = null, wasmBytes = null;
+let inputCtl = null, inputData = null; // SharedArrayBuffer для «спроси» (страница изолирована)
 const enc = new TextEncoder(), dec = new TextDecoder();
 const INDEX = '.__vladx_index';
 let cfg = { proxy: '', viaProxy: false };
@@ -300,6 +311,18 @@ function normPath(p) {
   const n = parts.join('/');
   if (n === INDEX) throw new Error('имя «' + INDEX + '» служебное');
   return n;
+}
+// Файлы на сервере (vladx-fs.php / vladx serve): запись сразу, как fs.writeFileSync в Node.
+function fsCall(op, path, data) {
+  const x = new XMLHttpRequest();
+  x.open('POST', cfg.fsUrl, false);
+  x.setRequestHeader('Content-Type', 'application/json');
+  x.setRequestHeader('X-VladX-Workspace', cfg.ws);
+  try { x.send(JSON.stringify({ op, path, data })); } catch (e) { throw new Error('сервер файлов недоступен'); }
+  let j;
+  try { j = JSON.parse(x.responseText); } catch (e) { throw new Error('сервер файлов ответил не JSON (HTTP ' + x.status + ')'); }
+  if (!j.ok) throw new Error(j.error || 'ошибка сервера файлов');
+  return j;
 }
 function noStore() { if (storageErr) throw new Error('хранилище браузера недоступно: ' + storageErr); }
 function listFiles() {
@@ -333,8 +356,19 @@ function httpGet(url) {
   netCache.set(key, body);
   return body;
 }
+function viaServer(url) {
+  const x = new XMLHttpRequest();
+  x.open('GET', cfg.fetchUrl + '?url=' + encodeURIComponent(url), false);
+  try { x.send(); } catch (e) { throw new Error('сервер сети недоступен'); }
+  if (x.status === 0) throw new Error('сервер сети недоступен');
+  if (x.getResponseHeader('X-VladX-Error')) throw new Error(x.responseText || ('ошибка сервера сети ' + x.status));
+  if (x.status >= 400) throw new Error('сервер ответил ' + x.status);
+  return x.responseText;
+}
 function httpGetRaw(url) {
-  const proxyHint = 'Включите «через прокси» и запустите vladx serve (' + (cfg.proxy || 'http://localhost:8000') + ')';
+  if (!/^https?:\/\//.test(url)) throw new Error('адрес должен начинаться с http:// или https://');
+  if (cfg.fetchUrl) return viaServer(url);
+  const proxyHint = 'В Node ограничения CORS нет — включите «сеть через сервер» в настройках (нужен vladx-fetch.php или vladx serve).';
   if (cfg.viaProxy) {
     if (!cfg.proxy) throw new Error('не указан адрес прокси');
     try { return xhr(proxied(url)); }
@@ -362,17 +396,33 @@ function llmPost(body) {
 }
 
 const imports = { env: {
-  vx_host_read: (p, l) => guard(() => readFile(str(p, l))),
+  vx_host_read: (p, l) => guard(() => cfg.fsUrl ? fsCall('read', str(p, l)).data : readFile(str(p, l))),
   vx_host_write: (pp, pl, dp, dl) => guard(() => {
+    if (cfg.fsUrl) { fsCall('write', str(pp, pl), str(dp, dl)); return ''; }
     const p = normPath(str(pp, pl)); noStore();
     wbuf.set(p, str(dp, dl)); dels.delete(p); return '';
   }),
   vx_host_delete: (p, l) => guard(() => {
+    if (cfg.fsUrl) { fsCall('delete', str(p, l)); return ''; }
     const k = normPath(str(p, l));
     if (!listFiles().includes(k)) throw notFound(k);
     wbuf.delete(k); dels.add(k); return '';
   }),
-  vx_host_list: () => guard(() => listFiles().join('\n')),
+  vx_host_list: () => guard(() => (cfg.fsUrl ? fsCall('list').files : listFiles()).join('\n')),
+  // Вывод по ходу выполнения, как console.log.
+  vx_host_say: (p, l) => { postMessage({ type: 'out', line: str(p, l) }); },
+  // «спроси» ждёт ответа по-настоящему: поток стоит на Atomics.wait, пока страница не ответит.
+  vx_host_input: (p, l) => {
+    if (!inputCtl) return ret('err\nнет ввода');
+    const prompt = str(p, l);
+    Atomics.store(inputCtl, 0, 0);
+    postMessage({ type: 'need-input', prompt });
+    Atomics.wait(inputCtl, 0, 0);
+    if (Atomics.load(inputCtl, 0) !== 1) return ret('err\nввод прерван');
+    const n = Atomics.load(inputCtl, 1);
+    return ret('ok\n' + dec.decode(inputData.slice(0, n)));
+  },
+  vx_host_now: () => cfg.liveTime ? Date.now() - cfg.tz * 60000 : 0,
   vx_host_get: (p, l) => guard(() => httpGet(str(p, l))),
   // Блокирующе ждать ответа человека нельзя: сообщаем странице и отказываем.
   vx_host_llm: (p, l) => guard(() => llmPost(str(p, l))),
@@ -444,15 +494,17 @@ async function handle(m) {
   }
   if (m.type === 'run' || m.type === 'run_ast') {
     if (!ex) await instantiate();
-    cfg = { proxy: m.proxy || '', viaProxy: !!m.viaProxy, llmUrl: cfg.llmUrl };
+    cfg = { proxy: m.proxy || '', viaProxy: !!m.viaProxy, llmUrl: cfg.llmUrl,
+      fsUrl: m.fsUrl || '', ws: m.ws || '', fetchUrl: m.fetchUrl || '', liveTime: !!m.liveTime, tz: m.tz || 0 };
+    if (m.sab) { inputCtl = new Int32Array(m.sab, 0, 2); inputData = new Uint8Array(m.sab, 8); } else { inputCtl = null; }
     if (m.fresh) netCache.clear();
-    await prepare();
+    if (!cfg.fsUrl) await prepare();
     let res;
     try {
       ex.vx_reset_host();
       ex.vx_set_time(m.time);
       const [ip, il] = put((m.answers || []).join('\n')); ex.vx_set_input(ip, il); ex.vx_free(ip, il);
-      ex.vx_set_interactive(1);
+      ex.vx_set_interactive(m.askMode == null ? 1 : m.askMode);
       ex.vx_set_permissions(m.perms);
       const [sp, sl] = put(m.code);
       const t0 = performance.now();
@@ -466,8 +518,14 @@ async function handle(m) {
       ex = null; // после аварии ядро пересоздаётся
       res = { ok: false, stdout: [], warnings: [], diagnostics: [{ code: 'E-INTERNAL', message: 'внутренняя ошибка ядра: ' + ((e && e.message) || e), line: 0, col: 0, len: 0 }] };
     }
-    release();
     res.asks = asks;
+    if (cfg.fsUrl) {
+      // Файлы уже на сервере: записаны в момент вызова.
+      postMessage({ type: 'reply', id: m.id, result: res });
+      postMessage({ type: 'stored' });
+      return;
+    }
+    release();
     if (res.waiting) {
       // Программа ждёт ответа: запись в хранилище откладывается до настоящего конца.
       wbuf = new Map(); dels = new Set();
@@ -574,9 +632,67 @@ function coreCall(fn, text, ...args) {
 async function bootCore(bytes) {
   const noop = () => 0n;
   const { instance } = await WebAssembly.instantiate(bytes, { env: {
-    vx_host_read: noop, vx_host_write: noop, vx_host_delete: noop, vx_host_list: noop, vx_host_get: noop, vx_host_llm: noop, vx_host_ask: () => 0 } });
+    vx_host_read: noop, vx_host_write: noop, vx_host_delete: noop, vx_host_list: noop, vx_host_get: noop, vx_host_llm: noop,
+    vx_host_ask: () => 0, vx_host_say: () => {}, vx_host_input: noop, vx_host_now: () => 0 } });
   core = instance.exports;
 }
+
+// ════════════ сервер рядом со страницей: файлы, сеть, ИИ ════════════
+// vladx-fs.php, vladx-fetch.php, vladx-llm.php — на shared-хостинге (PHP) и у vladx serve.
+// Изолированная страница (COOP/COEP) работает как Node: «спроси» ждёт ответа,
+// файлы пишутся на сервер сразу, время живое.
+const LIVE = typeof SharedArrayBuffer === 'function' && self.crossOriginIsolated === true;
+const inputSab = LIVE ? new SharedArrayBuffer(8 + 65536) : null;
+const srv = { fs: null, fetch: null };
+async function probe(name) {
+  const url = new URL(name, location.href).href;
+  try { const r = await fetch(url, { cache: 'no-store' }); const j = await r.json(); return j && j.available ? Object.assign({ url }, j) : null; }
+  catch (e) { return null; }
+}
+function workspace() {
+  let w = load('vladx.ws');
+  if (!w || !/^[0-9a-f]{32,64}$/.test(w)) {
+    w = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+    store('vladx.ws', w);
+  }
+  return w;
+}
+function serverFs() { return LIVE && srv.fs ? srv.fs : null; }
+function serverNet() { return srv.fetch && $('netserver').checked ? srv.fetch : null; }
+async function fsPost(body) {
+  const r = await fetch(serverFs().url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-VladX-Workspace': workspace() }, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || 'ошибка сервера файлов');
+  return j;
+}
+// Хранилище для панели: сервер (как в Node) или хранилище браузера (OPFS).
+const storage = {
+  list: async () => serverFs() ? (await fsPost({ op: 'list' })).files : (await call({ type: 'fs', op: 'list' })).files,
+  read: async path => serverFs() ? (await fsPost({ op: 'read', path })).data : (await call({ type: 'fs', op: 'read', path })).text,
+  write: async (path, text) => { if (serverFs()) await fsPost({ op: 'write', path, data: text }); else await call({ type: 'fs', op: 'write', path, text }); },
+  remove: async path => { if (serverFs()) await fsPost({ op: 'delete', path }); else await call({ type: 'fs', op: 'delete', path }); },
+};
+function showServerInfo() {
+  const fs = serverFs();
+  $('store-kind').textContent = fs ? (fs.kind === 'disk' ? '· диск' : '· сервер') : '· браузер';
+  $('fsinfo').textContent = fs
+    ? (fs.kind === 'disk' ? 'Файлы пишутся сразу на диск: ' + fs.dir : 'Файлы пишутся сразу на сервер (до ' + Math.round(fs.quota_bytes / 1048576) + ' МБ, ' + fs.max_files + ' файлов).')
+    : srv.fs ? 'Сервер файлов есть, но страница не изолирована (нет заголовков COOP/COEP) — файлы хранятся в браузере и записываются после завершения программы.'
+    : 'Сервера файлов нет — файлы хранятся в браузере и записываются после завершения программы.';
+  $('wsbox').hidden = !(fs && fs.kind !== 'disk');
+  $('wskey').value = workspace();
+  $('netinfo').textContent = srv.fetch ? 'Запросы rete идут через ' + srv.fetch.url.replace(location.origin, '') + ': любые сайты, как в Node.' : 'Сервера сети нет — работают только сайты, разрешающие CORS.';
+  $('netserver').disabled = !srv.fetch;
+  $('netserver').checked = !!srv.fetch && load('vladx.netserver') !== '0';
+  $('modeinfo').textContent = LIVE ? 'Как Node: вывод по ходу, «спроси» ждёт ответа, время идёт, файлы — сразу.' : 'Страница без изоляции (COOP/COEP): «спроси» продолжает программу повторным запуском с ответами.';
+  $('st-mode').textContent = LIVE ? '⚡ как Node' : 'режим браузера';
+}
+$('wscopy').onclick = () => { navigator.clipboard && navigator.clipboard.writeText(workspace()); status('ключ папки скопирован'); };
+$('wskey').addEventListener('change', () => {
+  const v = $('wskey').value.trim().toLowerCase();
+  if (!/^[0-9a-f]{32,64}$/.test(v)) { status('ключ — 32–64 шестнадцатеричных знака'); $('wskey').value = workspace(); return; }
+  store('vladx.ws', v); refreshFiles(); status('открыта рабочая папка ' + v.slice(0, 8) + '…');
+});
 
 // ════════════ документы и вкладки ════════════
 let docs = [], cur = null, docSeq = 0;
@@ -792,27 +908,27 @@ function renderFileTree() {
     const del = document.createElement('button'); del.textContent = '✕'; del.title = 'Удалить';
     dl.onclick = async e => {
       e.stopPropagation();
-      const r = await call({ type: 'fs', op: 'read', path: f });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([r.text], { type: 'text/plain;charset=utf-8' }));
+      const text = await storage.read(f);
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
       a.download = f.split('/').pop(); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     };
     del.onclick = async e => {
       e.stopPropagation(); if (!confirm('Удалить «' + f + '» из хранилища?')) return;
-      const r = await call({ type: 'fs', op: 'delete', path: f }); storedFiles = r.files; renderFileTree();
+      await storage.remove(f); refreshFiles();
     };
     li.append(ico, name, dl, del);
     li.onclick = async () => {
       const open = docs.find(d => d.path === f); if (open) { openDoc(open); closeSide(); return; }
-      const r = await call({ type: 'fs', op: 'read', path: f });
+      const text = await storage.read(f);
       const m = f.match(/^(.*?)(?:\.(vlstd|vlhmn))?$/);
-      openDoc(newDoc({ name: m[1], fmt: m[2] || 'vlstd', lang: lang(), code: r.text, source: 'storage', path: f, saved: r.text }));
+      openDoc(newDoc({ name: m[1], fmt: m[2] || 'vlstd', lang: lang(), code: text, source: 'storage', path: f, saved: text }));
       closeSide();
     };
     ul.appendChild(li);
   }
 }
 async function refreshFiles() {
-  try { const r = await call({ type: 'fs', op: 'list' }); storedFiles = r.files; renderFileTree(); }
+  try { storedFiles = await storage.list(); renderFileTree(); }
   catch (e) { $('files').innerHTML = '<li class="empty">' + esc(e.message || e) + '</li>'; }
 }
 async function saveCurrent() {
@@ -823,8 +939,8 @@ async function saveCurrent() {
     if (!path) return;
   }
   try {
-    const r = await call({ type: 'fs', op: 'write', path, text: code.value });
-    storedFiles = r.files;
+    await storage.write(path, code.value);
+    refreshFiles();
     const m = path.match(/^(.*?)(?:\.(vlstd|vlhmn))?$/);
     Object.assign(cur, { path, source: 'storage', name: m[1], saved: code.value, dirty: false, code: code.value });
     renderTabs(); saveDocs(); status('сохранено: ' + path);
@@ -880,7 +996,9 @@ function startWorker() {
   worker = new Worker(URL.createObjectURL(new Blob([$('worker-src').textContent], { type: 'text/javascript' })));
   worker.onmessage = ev => {
     const m = ev.data;
-    if (m.type === 'stored') { storedFiles = m.files || []; renderFileTree(); return; }
+    if (m.type === 'stored') { if (m.files) { storedFiles = m.files; renderFileTree(); } else refreshFiles(); return; }
+    if (m.type === 'out') { if (running) { $('output').appendChild(termLine(m.line)); $('terminal').scrollTop = $('terminal').scrollHeight; } return; }
+    if (m.type === 'need-input') { liveAsk(m.prompt); return; }
     const p = pending.get(m.id); if (!p) return; pending.delete(m.id);
     if (m.type === 'error') p.reject(new Error(m.message)); else p.resolve(m);
   };
@@ -926,12 +1044,11 @@ function renderResult(r, opts) {
 
 // ════════════ .vlhmn: перевод в ядре, запросы к модели — на сервер с ключом ════════════
 const MIN_CONFIDENCE = 0.8;
-function serverBase() { return ($('proxy').value.trim() || location.origin).replace(/\/+$/, ''); }
 let llmCache = null;
 async function llmInfo() {
   const typed = $('llmurl').value.trim();
   if (llmCache && llmCache.typed === typed) return llmCache;
-  const candidates = typed ? [typed] : ['vladx-llm.php', serverBase() + '/llm'];
+  const candidates = typed ? [typed] : ['vladx-llm.php'];
   for (const c of candidates) {
     let url;
     try { url = new URL(c, location.href).href; } catch (e) { continue; }
@@ -941,7 +1058,7 @@ async function llmInfo() {
       if (typeof i.available === 'boolean') { llmCache = { typed, url, model: i.model || '', available: i.available, reason: i.reason }; return llmCache; }
     } catch (e) { /* следующий вариант */ }
   }
-  llmCache = { typed, url: '', model: '', available: false, reason: typed ? 'сервер ИИ ' + typed + ' не отвечает' : 'сервер ИИ не найден (vladx-llm.php рядом со страницей или vladx serve → /llm)' };
+  llmCache = { typed, url: '', model: '', available: false, reason: typed ? 'сервер ИИ ' + typed + ' не отвечает' : 'сервер ИИ не найден (vladx-llm.php рядом со страницей или vladx serve)' };
   return llmCache;
 }
 function showLlmInfo(i) {
@@ -1017,15 +1134,23 @@ async function run(force) {
   }
   await step();
 }
+function startOutput(s) {
+  const out = $('output'); out.innerHTML = '';
+  out.appendChild(termLine('$ vladx run ' + (cur ? docLabel(cur) : 'программа') + (lang() ? ' --lang ' + LANGS[lang()] : ''), 'cmd'));
+  if (s.interp) out.appendChild(s.interp);
+}
 async function step() {
   if (!session) return;
   setRunning(true, 'выполняется…');
   const s = session;
+  startOutput(s);
   try {
+    const fs = serverFs(), net = serverNet();
     const r = await call(Object.assign({}, s.msgBase, {
       perms: ($('pfiles').checked ? 1 : 0) | ($('pnet').checked ? 2 : 0),
       answers: s.answers, fresh: s.answers.length === 0, time: s.time,
-      proxy: $('proxy').value.trim(), viaProxy: $('viaproxy').checked,
+      askMode: LIVE ? 2 : 1, sab: inputSab, liveTime: LIVE, tz: new Date().getTimezoneOffset(),
+      fsUrl: fs ? fs.url : '', ws: workspace(), fetchUrl: net ? net.url : '',
     }));
     if (session !== s) return;
     r.result.interp = s.interp;
@@ -1055,7 +1180,36 @@ async function step() {
 }
 const termHistory = [];
 let histPos = 0;
+// Живой режим: worker стоит на Atomics.wait, ответ кладётся в общую память.
+let liveWaiting = null;
+function liveAsk(prompt) {
+  liveWaiting = prompt;
+  $('term-prompt').textContent = prompt;
+  $('term-ask').hidden = false; $('term-input').value = '';
+  $('terminal').appendChild($('term-ask'));
+  $('terminal').scrollTop = $('terminal').scrollHeight;
+  setTimeout(() => $('term-input').focus(), 0);
+  status('ждёт ввода');
+}
+function liveAnswer(v) {
+  const bytes = enc.encode(v).slice(0, 65536);
+  const ctl = new Int32Array(inputSab, 0, 2);
+  new Uint8Array(inputSab, 8, bytes.length).set(bytes);
+  Atomics.store(ctl, 1, bytes.length);
+  Atomics.store(ctl, 0, 1);
+  Atomics.notify(ctl, 0);
+  $('output').appendChild(termLine(liveWaiting + ' ' + v));
+  liveWaiting = null;
+  $('term-ask').hidden = true;
+  status('выполняется…');
+}
 $('term-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && liveWaiting !== null) {
+    const v = $('term-input').value;
+    termHistory.push(v); histPos = termHistory.length;
+    liveAnswer(v);
+    return;
+  }
   if (e.key === 'Enter') {
     if (!session) return;
     const v = $('term-input').value;
@@ -1073,7 +1227,7 @@ $('term-input').addEventListener('keydown', e => {
 });
 async function stop(why) {
   const wasRunning = running;
-  session = null;
+  session = null; liveWaiting = null;
   $('term-ask').hidden = true;
   if (wasRunning) {
     // Синхронное ядро не прервать изнутри: worker пересоздаётся.
@@ -1100,6 +1254,7 @@ function showAsk(kinds) {
   $('asktext').textContent = 'Программа просит доступ: ' + kinds.map(k => ASK_TEXT[k]).join(' и ') + '.';
   $('askpanel').hidden = false; $('terminal').appendChild($('askpanel'));
 }
+$('netserver').addEventListener('change', () => { store('vladx.netserver', $('netserver').checked ? '1' : '0'); showServerInfo(); });
 $('allow').onclick = () => {
   for (const k of askKinds) $(k === 'files' ? 'pfiles' : 'pnet').checked = true;
   $('askpanel').hidden = true; run(pendingAst && fmt() === 'vlhmn' ? true : undefined);
@@ -1178,6 +1333,10 @@ async function boot() {
   catch (e) { return fatal('Не удалось запустить фоновый поток: ' + esc(e.message || e) + '. Откройте страницу через <code>vladx serve</code> или с хостинга по https.'); }
   ready = true; setRunning(false, 'ядро готово');
   $('format').disabled = false; $('ast').disabled = false;
+  showServerInfo();
+  const [fs, fe] = await Promise.all([probe('vladx-fs.php'), probe('vladx-fetch.php')]);
+  srv.fs = fs; srv.fetch = fe;
+  showServerInfo();
   refreshFiles();
   llmInfo().then(showLlmInfo);
   run();

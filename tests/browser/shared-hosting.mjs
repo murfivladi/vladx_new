@@ -1,6 +1,7 @@
-// Сценарий «shared-хостинг»: index.html (площадка) + vladx-llm.php + config.php
-// под `php -S`, вместо Polza — поддельный сервер. Проверяет, что .vlhmn
-// переводится в браузере через PHP, а ключ остаётся на сервере.
+// Сценарий «shared-хостинг»: index.php + playground.html + vladx-*.php + config.php
+// под `php -S`, вместо Polza — поддельный сервер. Проверяет режим «как Node»
+// (изоляция страницы, файлы на сервере сразу, сеть без CORS) и .vlhmn через PHP,
+// а ключ ИИ остаётся на сервере.
 //   node tests/browser/shared-hosting.mjs      (нужны php и собранный site/playground.html)
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
@@ -38,14 +39,21 @@ const polza = http.createServer((req, res) => {
 }).listen(0, '127.0.0.1');
 await new Promise(r => polza.on('listening', r));
 
+// ── сайт без CORS (браузер напрямую его прочитать не может, Node — может) ──
+const site = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/plain; charset=utf-8'); res.end('секрет без CORS'); }).listen(0, '127.0.0.1');
+await new Promise(r => site.on('listening', r));
+const SITE = `http://127.0.0.1:${site.address().port}/data.txt`;
+
 // ── «хостинг» ──
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vladx-shared-'));
-fs.copyFileSync(path.join(ROOT, 'site/playground.html'), path.join(dir, 'index.html'));
-fs.copyFileSync(path.join(ROOT, 'deploy/shared/vladx-llm.php'), path.join(dir, 'vladx-llm.php'));
-fs.writeFileSync(path.join(dir, 'config.php'), `<?php return ['polza_api_key' => '${KEY}', 'endpoint' => 'http://127.0.0.1:${polza.address().port}/v1/chat/completions', 'model' => 'anthropic/claude-haiku-5.5'];`);
+fs.copyFileSync(path.join(ROOT, 'site/playground.html'), path.join(dir, 'playground.html'));
+for (const f of ['index.php', 'vladx-common.php', 'vladx-llm.php', 'vladx-fs.php', 'vladx-fetch.php']) fs.copyFileSync(path.join(ROOT, 'deploy/shared', f), path.join(dir, f));
+fs.writeFileSync(path.join(dir, 'config.php'), `<?php return ['polza_api_key' => '${KEY}', 'endpoint' => 'http://127.0.0.1:${polza.address().port}/v1/chat/completions',
+  'model' => 'anthropic/claude-haiku-5.5', 'fetch_allow_private' => true];`);
 const port = 18000 + Math.floor(Math.random() * 1000);
 const php = spawn('php', ['-S', `127.0.0.1:${port}`, '-t', dir], { stdio: 'ignore', env: { ...process.env, http_proxy: '', HTTP_PROXY: '' } });
 for (let i = 0; i < 50; i++) { try { await fetch(`http://127.0.0.1:${port}/vladx-llm.php`); break; } catch { await new Promise(r => setTimeout(r, 100)); } }
+const php_ = (name, init) => fetch(`http://127.0.0.1:${port}/${name}`, init).then(r => r.json());
 
 const browser = await chromium.launch();
 const page = await (await browser.newContext()).newPage();
@@ -67,6 +75,31 @@ try {
   await idle();
   await page.waitForFunction(() => /vladx-llm\.php/.test(document.getElementById('fmt').title), null, { timeout: 10000 });
   check(1, 'площадка сама нашла vladx-llm.php рядом с собой', true);
+  await page.waitForFunction(() => /сервер/.test(document.getElementById('store-kind').textContent), null, { timeout: 10000 }).catch(() => {});
+  check('1a', 'index.php изолирует страницу: режим «как Node», файлы на сервере',
+    (await page.evaluate(() => self.crossOriginIsolated)) && (await page.innerText('#st-mode')).includes('как Node') && (await page.innerText('#store-kind')).includes('сервер'));
+
+  // как Node: файл на сервере появляется сразу, пока программа ждёт ответа
+  await page.fill('#code', 'file.запиши("заметки/день.txt", "записано по ходу")\nскажи "записал"\nспроси "продолжить?" и сохрани в ответ\nскажи file.прочитай("заметки/день.txt") + " / " + ответ');
+  await page.click('#run');
+  await page.waitForFunction(() => /ждёт ввода/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
+  const ws = await page.evaluate(() => localStorage.getItem('vladx.ws'));
+  const onServer = await php_('vladx-fs.php', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-VladX-Workspace': ws }, body: JSON.stringify({ op: 'read', path: 'заметки/день.txt' }) });
+  check('1b', 'файл записан на сервер сразу (программа ещё ждёт ответа)', onServer.ok && onServer.data === 'записано по ходу' && (await page.innerText('#output')).includes('записал'), JSON.stringify(onServer));
+  await page.fill('#term-input', 'да'); await page.press('#term-input', 'Enter');
+  await page.waitForTimeout(50); await idle();
+  let o = await page.innerText('#output');
+  check('1c', 'после ответа программа продолжила с того же места', o.includes('записано по ходу / да') && o.split('записал').length === 2, o);
+  const other = await php_('vladx-fs.php', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-VladX-Workspace': 'f'.repeat(32) }, body: JSON.stringify({ op: 'list' }) });
+  check('1d', 'у другого браузера своя рабочая папка', other.ok && other.files.length === 0, JSON.stringify(other));
+
+  // как Node: сеть без CORS — через vladx-fetch.php
+  o = await run(`скажи rete.получи("${SITE}")`);
+  check('1e', 'rete.получи сайта без CORS — через сервер, как в Node', o.includes('секрет без CORS'), o);
+  await page.click('#act-settings'); await page.uncheck('#netserver');
+  o = await run(`скажи rete.получи("${SITE}")`);
+  check('1f', 'напрямую из браузера тот же сайт недоступен (CORS) — понятная ошибка', o.includes('E-NET-001') && o.includes('через сервер'), o);
+  await page.check('#netserver'); await page.click('#act-explorer');
 
   await page.selectOption('#fmt', 'vlhmn');
   let out = await run('Сделай список покупок: хлеб и сыр. Выведи каждый пункт с тире.');
@@ -89,8 +122,21 @@ try {
   const direct = browserRequests.filter(r => r.url().includes(String(polza.address().port)));
   check(8, 'браузер не ходит в Polza напрямую', direct.length === 0, direct.map(r => r.url()).join('\n'));
   check(9, 'в консоли нет ошибок', errors.length === 0, errors.join('\n'));
+
+  // Запасной режим: playground.html напрямую, без заголовков изоляции → «спроси» через повтор.
+  const p2 = await (await browser.newContext()).newPage();
+  await p2.goto(`http://127.0.0.1:${port}/playground.html`);
+  await p2.waitForFunction(() => /готово|ошибка/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
+  const mode = await p2.innerText('#st-mode');
+  await p2.fill('#code', 'скажи "раз"\nспроси "имя?" и сохрани в имя\nскажи "привет, {имя}"');
+  await p2.click('#run');
+  await p2.waitForFunction(() => /ждёт ввода/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
+  await p2.fill('#term-input', 'Ло'); await p2.press('#term-input', 'Enter');
+  await p2.waitForFunction(() => /готово/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
+  const o2 = await p2.innerText('#output');
+  check(10, 'без изоляции страницы — режим браузера, «спроси» продолжает программу повтором', mode.includes('браузер') && o2.includes('привет, Ло') && o2.split('раз').length === 2, mode + '\n' + o2);
 } finally {
-  await browser.close(); php.kill(); polza.close();
+  await browser.close(); php.kill(); polza.close(); site.close();
   fs.rmSync(dir, { recursive: true, force: true });
 }
 console.log(`\n${passed} прошло, ${failed} упало`);

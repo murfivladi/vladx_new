@@ -120,8 +120,8 @@ jobs:
           cp site/playground.html dist/vladx-playground.html
           # архив для shared-хостинга: площадка + PHP-посредник ИИ
           mkdir -p shared
-          cp site/playground.html shared/index.html
-          cp deploy/shared/vladx-llm.php deploy/shared/config.example.php deploy/shared/.htaccess deploy/shared/README.md shared/
+          cp site/playground.html shared/playground.html
+          cp deploy/shared/*.php deploy/shared/.htaccess deploy/shared/README.md shared/
           (cd shared && zip -q -r ../dist/vladx-shared.zip . -x '.*' && zip -q ../dist/vladx-shared.zip .htaccess)
           cp "$(cargo metadata --format-version 1 --no-deps | python3 -c 'import sys,json;print(json.load(sys.stdin)["target_directory"])')/wasm32-unknown-unknown/release/vladx_wasm.wasm" dist/vladx.wasm
       - uses: actions/upload-artifact@v4

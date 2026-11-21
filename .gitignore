@@ -7,3 +7,4 @@ examples/**/папка/
 *.wasm
 # кэш переводов .vlhmn (ответы ИИ)
 .vladx-cache/
+vladx-files/

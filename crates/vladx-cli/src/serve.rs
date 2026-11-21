@@ -49,7 +49,7 @@ fn respond(s: &mut TcpStream, status: &str, ctype: &str, body: &[u8], extra: &st
     let _ = s.write_all(body);
 }
 
-fn handle(mut s: TcpStream, root: PathBuf) {
+fn handle(mut s: TcpStream, root: PathBuf, files: PathBuf) {
     let mut reader = BufReader::new(match s.try_clone() {
         Ok(c) => c,
         Err(_) => return,
@@ -108,18 +108,34 @@ fn handle(mut s: TcpStream, root: PathBuf) {
         respond(&mut s, "200 OK", "application/json; charset=utf-8", reply.to_string().as_bytes(), "");
         return;
     }
+    if path == "/fs" || path.ends_with("/vladx-fs.php") {
+        // Файлы программ площадки — прямо на диске, в папке --files (запись сразу, как в Node).
+        let reply = if method == "POST" {
+            let mut body = vec![0u8; content_length.min(64 * 1024 * 1024)];
+            if reader.read_exact(&mut body).is_err() {
+                return;
+            }
+            fs_reply(&body, &files)
+        } else {
+            serde_json::json!({"available": true, "kind": "disk", "dir": files.display().to_string()})
+        };
+        respond(&mut s, "200 OK", "application/json; charset=utf-8", reply.to_string().as_bytes(), "");
+        return;
+    }
     if method != "GET" && method != "HEAD" {
         respond(&mut s, "405 Method Not Allowed", "text/plain; charset=utf-8", "только GET (и POST /llm)".as_bytes(), "");
         return;
     }
-    if path == "/fetch" {
-        let url = query
-            .split('&')
-            .find_map(|kv| kv.strip_prefix("url="))
-            .map(percent_decode)
-            .unwrap_or_default();
+    if path == "/fetch" || path.ends_with("/vladx-fetch.php") {
+        let url = query.split('&').find_map(|kv| kv.strip_prefix("url=")).map(percent_decode);
+        let Some(url) = url else {
+            // проверка доступности (тот же ответ, что у vladx-fetch.php)
+            respond(&mut s, "200 OK", "application/json; charset=utf-8", br#"{"available":true}"#, "");
+            return;
+        };
+        let err_h = "X-VladX-Error: 1\r\n";
         if !(url.starts_with("http://") || url.starts_with("https://")) {
-            respond(&mut s, "400 Bad Request", "text/plain; charset=utf-8", "адрес должен начинаться с http:// или https://".as_bytes(), "");
+            respond(&mut s, "400 Bad Request", "text/plain; charset=utf-8", "адрес должен начинаться с http:// или https://".as_bytes(), err_h);
             return;
         }
         match crate::host::agent_for(&url, 20).get(&url).call() {
@@ -133,7 +149,7 @@ fn handle(mut s: TcpStream, root: PathBuf) {
                 let body = r.into_string().unwrap_or_default();
                 respond(&mut s, &format!("{code} Upstream"), "text/plain; charset=utf-8", body.as_bytes(), "");
             }
-            Err(e) => respond(&mut s, "502 Bad Gateway", "text/plain; charset=utf-8", format!("запрос не удался: {e}").as_bytes(), ""),
+            Err(e) => respond(&mut s, "502 Bad Gateway", "text/plain; charset=utf-8", format!("запрос не удался: {e}").as_bytes(), err_h),
         }
         return;
     }
@@ -148,7 +164,15 @@ fn handle(mut s: TcpStream, root: PathBuf) {
     }
     let file = root.join(&rel);
     match std::fs::read(&file) {
-        Ok(body) if file.is_file() => respond(&mut s, "200 OK", mime(&file), if method == "HEAD" { &[] } else { &body }, ""),
+        Ok(body) if file.is_file() => {
+            // Изоляция страницы: «спроси» может по-настоящему ждать ответа (SharedArrayBuffer).
+            let extra = if mime(&file).starts_with("text/html") {
+                "Cross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Embedder-Policy: require-corp\r\n"
+            } else {
+                ""
+            };
+            respond(&mut s, "200 OK", mime(&file), if method == "HEAD" { &[] } else { &body }, extra)
+        }
         _ => respond(&mut s, "404 Not Found", "text/plain; charset=utf-8", format!("нет файла «{rel}»").as_bytes(), ""),
     }
 }
@@ -186,18 +210,43 @@ fn llm_reply(body: &[u8]) -> serde_json::Value {
     }
 }
 
-pub fn serve(port: u16, root: PathBuf) -> std::io::Result<()> {
+/// POST /fs {op, path, data} → {ok, …}: тот же протокол, что у deploy/shared/vladx-fs.php.
+fn fs_reply(body: &[u8], files: &Path) -> serde_json::Value {
+    use vladx_runtime::Host;
+    let req: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(e) => return serde_json::json!({"ok": false, "error": format!("запрос не JSON: {e}")}),
+    };
+    let _ = std::fs::create_dir_all(files);
+    let mut host = crate::host::CliHost { base: files.to_path_buf(), restrict: true, deadline: None, stream: false };
+    let path = req["path"].as_str().unwrap_or("");
+    if path.split(['/', '\\']).any(|seg| seg.starts_with('.') && !seg.is_empty() && seg != ".") {
+        return serde_json::json!({"ok": false, "error": format!("недопустимое имя «{path}»")});
+    }
+    let r = match req["op"].as_str().unwrap_or("") {
+        "list" => host.list().map(|f| serde_json::json!({"ok": true, "files": f})),
+        "read" => host.read(path).map(|d| serde_json::json!({"ok": true, "data": d})),
+        "write" => host.write(path, req["data"].as_str().unwrap_or("")).map(|_| serde_json::json!({"ok": true})),
+        "delete" => host.delete(path).map(|_| serde_json::json!({"ok": true})),
+        "stat" => host.list().map(|f| serde_json::json!({"ok": true, "files": f.len()})),
+        other => Err(format!("неизвестная операция «{other}»")),
+    };
+    r.unwrap_or_else(|e| serde_json::json!({"ok": false, "error": e}))
+}
+
+pub fn serve(port: u16, root: PathBuf, files: PathBuf) -> std::io::Result<()> {
     let listener = TcpListener::bind(("0.0.0.0", port))?;
     println!("vladx serve: папка {}", root.display());
     println!("  площадка: http://localhost:{port}/site/playground.html");
     println!("  прокси:   http://localhost:{port}/fetch?url=https://example.com");
+    println!("  файлы программ: {} (пишутся сразу, как в Node)", files.display());
     match crate::llm::Polza::from_env() {
         Ok(_) => println!("  ИИ (.vlhmn): http://localhost:{port}/llm, модель {}", crate::llm::provider().model()),
         Err(e) => println!("  ИИ (.vlhmn) выключен: {e}"),
     }
     for stream in listener.incoming().flatten() {
-        let root = root.clone();
-        let _ = std::thread::Builder::new().stack_size(64 * 1024 * 1024).spawn(move || handle(stream, root));
+        let (root, files) = (root.clone(), files.clone());
+        let _ = std::thread::Builder::new().stack_size(64 * 1024 * 1024).spawn(move || handle(stream, root, files));
     }
     Ok(())
 }

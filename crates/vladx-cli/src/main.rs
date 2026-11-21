@@ -20,7 +20,7 @@ const USAGE: &str = "vladx — интерпретатор VladX (v0.1)
   vladx fmt <файл> [--lang …] [--to ru|it|scn] [--write]       канонический вид / перевод на другой язык
   vladx hmn-eval <папка> [--lang …]                           проверка перевода .vlhmn на наборе фраз
   vladx keywords [--lang ru|it|scn]                           словарь форм
-  vladx serve [--port 8000] [--root <папка>]                  площадка и прокси
+  vladx serve [--port 8000] [--root <папка>] [--files <папка>] площадка, сеть, файлы и ИИ для неё
 
   по умолчанию открыто всё (как в Node): любые файлы и сеть;
   сузить: --no-files, --no-net, --restrict-files (только папка программы)
@@ -45,6 +45,7 @@ pub struct Args {
     pub write: bool,
     pub min_confidence: Option<f64>,
     pub show: bool,
+    pub files: Option<String>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -66,6 +67,7 @@ fn parse_args() -> Result<Args, String> {
         write: false,
         min_confidence: None,
         show: false,
+        files: None,
     };
     while let Some(x) = it.next() {
         let mut val = |name: &str| it.next().ok_or_else(|| format!("после {name} нужно значение"));
@@ -90,6 +92,7 @@ fn parse_args() -> Result<Args, String> {
             "--net" => {} // устаревший флаг: сеть и так открыта
             "--port" => a.port = val("--port")?.parse().map_err(|_| "порт — число".to_string())?,
             "--root" => a.root = Some(val("--root")?),
+            "--files" => a.files = Some(val("--files")?),
             "--max-steps" => a.max_steps = val("--max-steps")?.parse().map_err(|_| "--max-steps — число".to_string())?,
             "--max-seconds" => a.max_seconds = val("--max-seconds")?.parse().map_err(|_| "--max-seconds — число".to_string())?,
             "-h" | "--help" => return Err(USAGE.to_string()),
@@ -140,7 +143,9 @@ fn main() -> ExitCode {
         "keywords" => keywords_cmd(&a),
         "serve" => {
             let root = a.root.clone().map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap());
-            serve::serve(a.port, root).map(|_| true).map_err(|e| format!("сервер не запущен: {e}"))
+            let files = a.files.clone().map(PathBuf::from).unwrap_or_else(|| root.join("vladx-files"));
+            let files = std::fs::canonicalize(&files).unwrap_or(files);
+            serve::serve(a.port, root, files).map(|_| true).map_err(|e| format!("сервер не запущен: {e}"))
         }
         "help" | "-h" | "--help" => {
             println!("{USAGE}");

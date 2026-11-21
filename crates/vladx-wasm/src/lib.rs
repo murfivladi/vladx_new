@@ -9,6 +9,8 @@
 //! `vx_host_list`, `vx_host_get` — возвращают `u64 = (ptr << 32) | len` на буфер
 //! `"ok\n…"` или `"err\n…"`, выделенный через `vx_alloc`; ядро освобождает его.
 //! `vx_host_ask(kind)` — просьба о доступе (1 — файлы, 2 — сеть), 1 = разрешено.
+//! `vx_host_say(строка)` — вывод по ходу выполнения; `vx_host_input(вопрос) → u64` — ответ человека
+//! (`"ok\n<ответ>"`; только в режиме 2); `vx_host_now() → f64` — время в мс (0 — взять vx_set_time).
 //! `vx_host_llm(json)` — диалог перевода `.vlhmn` (`{"messages": [...]}`) серверу ИИ
 //! (`vladx-llm.php` или `vladx serve` → /llm); ответ — `"ok\n<текст модели>"` или `"err\n…"`.
 
@@ -27,6 +29,9 @@ extern "C" {
     fn vx_host_get(p: *const u8, l: usize) -> u64;
     fn vx_host_ask(kind: u32) -> u32;
     fn vx_host_llm(p: *const u8, l: usize) -> u64;
+    fn vx_host_say(p: *const u8, l: usize);
+    fn vx_host_input(p: *const u8, l: usize) -> u64;
+    fn vx_host_now() -> f64;
 }
 
 // Вне WASM (cargo test/build на хосте) — заглушки: хоста нет.
@@ -39,6 +44,9 @@ mod stubs {
     pub unsafe fn vx_host_get(_: *const u8, _: usize) -> u64 { 0 }
     pub unsafe fn vx_host_ask(_: u32) -> u32 { 0 }
     pub unsafe fn vx_host_llm(_: *const u8, _: usize) -> u64 { 0 }
+    pub unsafe fn vx_host_say(_: *const u8, _: usize) {}
+    pub unsafe fn vx_host_input(_: *const u8, _: usize) -> u64 { 0 }
+    pub unsafe fn vx_host_now() -> f64 { 0.0 }
 }
 #[cfg(not(target_arch = "wasm32"))]
 use stubs::*;
@@ -52,7 +60,10 @@ struct State {
     /// Модель на сервере ИИ (входит в ключ кэша переводов).
     llm_model: String,
     /// Площадка: «спроси» без ответа останавливает программу (см. Options::interactive).
-    interactive: bool,
+    /// «спроси»: 0 — ответы только из очереди; 1 — без ответа остановиться
+    /// (повторный запуск с ответами); 2 — ждать ответа через импорт vx_host_input
+    /// (страница с SharedArrayBuffer: программа реально стоит, как в Node).
+    ask_mode: u32,
     /// Кэш переводов .vlhmn на время жизни страницы.
     hmn_cache: std::collections::HashMap<String, String>,
 }
@@ -65,7 +76,7 @@ thread_local! {
         time_ms: 0.0,
         perms: 3,
         llm_model: String::new(),
-        interactive: false,
+        ask_mode: 0,
         hmn_cache: std::collections::HashMap::new(),
     });
 }
@@ -128,11 +139,23 @@ impl Host for WebHost {
         };
         unsafe { vx_host_ask(k) == 1 }
     }
-    fn input(&mut self, _prompt: &str) -> Option<String> {
-        ST.with(|st| st.borrow_mut().input.pop_front())
+    fn input(&mut self, prompt: &str) -> Option<String> {
+        if let Some(a) = ST.with(|st| st.borrow_mut().input.pop_front()) {
+            return Some(a);
+        }
+        if ST.with(|st| st.borrow().ask_mode) == 2 {
+            return take_reply(unsafe { vx_host_input(prompt.as_ptr(), prompt.len()) }).ok();
+        }
+        None
+    }
+    fn say(&mut self, line: &str) {
+        // Вывод по ходу выполнения, как console.log.
+        unsafe { vx_host_say(line.as_ptr(), line.len()) }
     }
     fn now_ms(&mut self) -> f64 {
-        ST.with(|st| st.borrow().time_ms)
+        // Время даёт страница: живое (как Date.now) или зафиксированное на сеанс повторов.
+        let t = unsafe { vx_host_now() };
+        if t > 0.0 { t } else { ST.with(|st| st.borrow().time_ms) }
     }
 }
 
@@ -271,7 +294,7 @@ fn run_setup(max_steps: u32) -> (Dictionary, Options) {
             max_steps: if max_steps == 0 { 3_000_000 } else { max_steps as u64 },
             files: st.perms & 1 != 0,
             net: st.perms & 2 != 0,
-            interactive: st.interactive,
+            interactive: st.ask_mode == 1,
             seed: Some(st.time_ms.to_bits() | 1),
             ..Options::default()
         };
@@ -413,10 +436,10 @@ pub unsafe extern "C" fn vx_translate(ptr: *const u8, len: usize, lang: u32) -> 
 
 // ───────────── редактор: подсветка и живая проверка ─────────────
 
-/// Интерактивный «спроси» (1 — включён).
+/// Режим «спроси»: 0 — только очередь ответов, 1 — остановка и повтор, 2 — ждать ответа (импорт vx_host_input).
 #[no_mangle]
-pub extern "C" fn vx_set_interactive(on: u32) {
-    ST.with(|st| st.borrow_mut().interactive = on != 0);
+pub extern "C" fn vx_set_interactive(mode: u32) {
+    ST.with(|st| st.borrow_mut().ask_mode = mode.min(2));
 }
 
 /// Разметка для подсветки: `{"t": [[строка, колонка, длина, вид], …], "e": ошибка | null}`.
